@@ -10,7 +10,8 @@ const LoginView = () => {
   const navigate = useNavigate();
 
   // 1. URL DINÁMICA: Asegúrate de configurar VITE_API_URL en las variables de entorno de Vercel
-  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+  // Línea 14: Solo la base, sin el /api/login al final
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://concursoengllish.onrender.com';;
 
   // Limpiar sesión vieja al cargar el Login
   useEffect(() => {

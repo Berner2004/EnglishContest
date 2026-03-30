@@ -8,7 +8,6 @@ import { io } from 'socket.io-client';
 // Conexión al servidor de WebSockets en Render
 const socket = io('https://concursoengllish.onrender.com');
 
-// Vocabulario oficial 
 const WORDS_POOL = [
   "kitchen", "living room", "bedroom", "garage", "bathroom", 
   "bathtub", "spring", "beard", "listen", "play", "shopping", 
@@ -27,14 +26,15 @@ const AmericanThinkGame = () => {
   const participants = state?.participants || [];
   
   const settings = { 
-    listenTime: 15,       // Ronda 1: 15s por estudiante 
-    scrambledView: 3,     // Ronda 2: 3s para memorizar 
-    scrambledWrite: 8,    // Ronda 2: 8s para escribir 
+    listenTime1: 10,      
+    listenTime2: 18,      
+    scrambledView: 3,     
+    scrambledWrite: 8,    
     boardsUpTime: 10,    
-    dictationSent: 40,    // Ronda 2: 40s para oración 
-    dictationSpell: 80,   // Ronda 2: 80s para deletreo letra x letra 
-    speedRead: 10,        // Ronda 3: 10s de lectura 
-    recallTime: 18        // Ronda 3: 18s tiempo para deletreo y oración 
+    dictationSent: 40,    
+    dictationSpell: 80,   
+    speedRead: 10,        
+    recallTime: 18        
   };
 
   const [currentChildIdx, setCurrentChildIdx] = useState(0);
@@ -51,18 +51,15 @@ const AmericanThinkGame = () => {
   const currentChild = participants[currentChildIdx];
   const intervalRef = useRef(null);
   
-  // Referencias de Audio
   const audioRefBoardsUp = useRef(new Audio('/audio/boards-up.mp3'));
   const audioRefTimeOut = useRef(new Audio('/sounds/time.mp3'));
 
-  // EMISIÓN DE LIMPIEZA AL DESMONTAR EL COMPONENTE
   useEffect(() => {
     return () => {
       socket.emit('clear_state');
     };
   }, []);
 
-  // EMISIÓN DE ESTADO EN VIVO POR WEBSOCKETS
   useEffect(() => {
     socket.emit('sync_state', {
       game: 'AMERICAN_THINK',
@@ -73,38 +70,44 @@ const AmericanThinkGame = () => {
     });
   }, [round, phase, timeLeft, displayWords, originalWords, currentIndex, currentChild]);
 
-  // MOTOR DEL RELOJ CON ALARMA INTELIGENTE
+  // MOTOR DEL RELOJ MODIFICADO PARA ALARMA AL FINAL
   useEffect(() => {
     if (isActive && timeLeft > 0) {
-      
-      const isBoardWrite = ['SCRAMBLED_WRITE', 'DICTATION_SENTENCE', 'DICTATION_SPELLING'].includes(phase);
-      const isSingleBeep = ['LISTENING_1', 'LISTENING_2', 'SPEED_READING', 'STOP_RECALL'].includes(phase);
-
-      // Suena en los últimos 4s para Boards (4, 3, 2, 1), o solo en el último 1s para las demás. Nada en pausas.
-      if ((isBoardWrite && timeLeft <= 4) || (isSingleBeep && timeLeft === 1)) {
-        audioRefTimeOut.current.currentTime = 0; 
-        audioRefTimeOut.current.volume = 1.0;    
-        audioRefTimeOut.current.play().catch(e => console.log("Audio Error:", e));
-      }
-
       intervalRef.current = setInterval(() => {
         setTimeLeft(prev => prev - 1);
       }, 1000);
     } else if (timeLeft === 0 && isActive) {
       setIsActive(false); 
+      
+      // LOGICA DE ALARMA: Suena justo al llegar a 0 (cuando cambia la pantalla)
+      const shouldPlayAlarm = [
+        'LISTENING_1', 'LISTENING_2', 
+        'SCRAMBLED_WRITE', 'DICTATION_SENTENCE', 'DICTATION_SPELLING',
+        'SPEED_READING', 'STOP_RECALL'
+      ].includes(phase);
+
+      if (shouldPlayAlarm) {
+        audioRefTimeOut.current.currentTime = 0;
+        audioRefTimeOut.current.play().catch(e => console.log("Audio Error:", e));
+      }
+
       handleAutoTransition(); 
     }
     return () => clearInterval(intervalRef.current);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive, timeLeft, phase]);
 
-  // LÓGICA DE TRANSICIONES (SCRAMBLE: PALABRA 1 -> BOARDS 1 -> PALABRA 2 -> BOARDS 2 -> PAUSA REVELAR)
   const handleAutoTransition = () => {
     if (phase === 'LISTENING_1') {
       setPhase('PAUSE_LISTEN_2');
       setCurrentIndex(1);
     }
     else if (phase === 'LISTENING_2') {
+      setPhase('BOARDS_UP_ROUND1');
+      setTimeLeft(settings.boardsUpTime);
+      audioRefBoardsUp.current.play().catch(e => console.log(e));
+      setIsActive(true);
+    }
+    else if (phase === 'BOARDS_UP_ROUND1') {
       goToNextStudent();
     }
     else if (phase === 'SCRAMBLED_VIEW') {
@@ -113,29 +116,25 @@ const AmericanThinkGame = () => {
       setIsActive(true);
     }
     else if (phase === 'SCRAMBLED_WRITE') {
-      // SIEMPRE que termine de escribir va a BOARDS UP y suena el audio inmediatamente
       setPhase('BOARDS_UP_SCRAMBLE');
       setTimeLeft(settings.boardsUpTime);
       audioRefBoardsUp.current.play().catch(e => console.log(e));
       setIsActive(true);
     }
     else if (phase === 'BOARDS_UP_SCRAMBLE') {
-      // Una vez bajen las pizarras del Scramble 1, pasamos al Scramble 2, si es el 2, vamos a revelar
       if (currentIndex === 0) {
         setCurrentIndex(1);
         setPhase('PAUSE_BEFORE_SCRAMBLE_2');
       } else {
-        setCurrentIndex(0); // Reinicia a 0 para revelar primero la 1
+        setCurrentIndex(0);
         setPhase('PAUSE_BEFORE_REVEAL');
       }
     }
     else if (phase === 'SCRAMBLED_REVEAL') {
       if (currentIndex === 0) { 
-        // Se reveló la 1 -> pausa para revelar la 2
         setCurrentIndex(1);
         setPhase('PAUSE_BEFORE_REVEAL_2');
       } else {
-        // Ya revelamos la 2, avanzamos al dictado
         setPhase('PAUSE_DICTATION_SENTENCE');
       }
     }
@@ -173,9 +172,14 @@ const AmericanThinkGame = () => {
       else if (round === 2) startRound2();
       else if (round === 3) startRound3();
     }
-    else if (phase === 'PAUSE_LISTEN_1' || phase === 'PAUSE_LISTEN_2') {
-      setPhase(phase === 'PAUSE_LISTEN_1' ? 'LISTENING_1' : 'LISTENING_2');
-      setTimeLeft(settings.listenTime);
+    else if (phase === 'PAUSE_LISTEN_1') {
+      setPhase('LISTENING_1');
+      setTimeLeft(settings.listenTime1);
+      setIsActive(true);
+    }
+    else if (phase === 'PAUSE_LISTEN_2') {
+      setPhase('LISTENING_2');
+      setTimeLeft(settings.listenTime2);
       setIsActive(true);
     }
     else if (phase === 'PAUSE_BEFORE_SCRAMBLE' || phase === 'PAUSE_BEFORE_SCRAMBLE_2') {
@@ -307,7 +311,6 @@ const AmericanThinkGame = () => {
     setDisplayWords(getWords(40)); 
   };
 
-  // --- LÓGICA DE REINICIO AISLADO POR SUB-FASE ---
   const handleResetTurn = () => {
     setIsActive(false);
     setTimeLeft(0);
@@ -315,7 +318,7 @@ const AmericanThinkGame = () => {
     if (phase === 'LISTENING_1' || phase === 'PAUSE_LISTEN_1') {
       setPhase('PAUSE_LISTEN_1');
     } 
-    else if (phase === 'LISTENING_2' || phase === 'PAUSE_LISTEN_2') {
+    else if (phase === 'LISTENING_2' || phase === 'PAUSE_LISTEN_2' || phase === 'BOARDS_UP_ROUND1') {
       setPhase('PAUSE_LISTEN_2');
     } 
     else if (phase === 'SCRAMBLED_VIEW' || phase === 'SCRAMBLED_WRITE' || phase === 'BOARDS_UP_SCRAMBLE') {
@@ -323,11 +326,8 @@ const AmericanThinkGame = () => {
       else setPhase('PAUSE_BEFORE_SCRAMBLE_2');
     } 
     else if (phase === 'SCRAMBLED_REVEAL' || phase === 'PAUSE_BEFORE_REVEAL' || phase === 'PAUSE_BEFORE_REVEAL_2') {
-      if (currentIndex === 0) {
-        setPhase('PAUSE_BEFORE_REVEAL'); 
-      } else {
-        setPhase('PAUSE_BEFORE_REVEAL_2');
-      }
+      if (currentIndex === 0) setPhase('PAUSE_BEFORE_REVEAL'); 
+      else setPhase('PAUSE_BEFORE_REVEAL_2');
     } 
     else if (phase === 'DICTATION_SENTENCE' || phase === 'PAUSE_DICTATION_SENTENCE' || phase === 'BOARDS_UP_SENTENCE') {
       setPhase('PAUSE_DICTATION_SENTENCE');

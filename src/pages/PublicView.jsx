@@ -24,9 +24,8 @@ const PublicView = () => {
       
       // 2. Audio de "Time Up" automático cuando el tiempo llega a 0 en fases de escritura
       if (payload.timeLeft === 0 && 
-          (payload.phase === 'SCRAMBLED_WRITE' || 
-           payload.phase === 'DICTATION_SENTENCE' || 
-           payload.phase === 'DICTATION_SPELLING')) {
+          (payload.phase.includes('WRITE') || 
+           payload.phase.includes('DICTATION'))) {
         if (audioRefTimeUp.current) {
           audioRefTimeUp.current.play().catch(err => console.error("Audio block:", err));
         }
@@ -113,7 +112,7 @@ const PublicView = () => {
       case 'POWER_UP_1':
       case 'POWER_UP_3':
         return {
-          primary: 'bg-violet-700', headerText: 'text-violet-200', badgeBg: 'bg-white/20', badgeBorder: 'border-white/30', textMain: 'text-violet-600', textLight: 'text-violet-400', bgLight: 'bg-violet-900/40', borderLight: 'border-violet-500/30', iconColor: 'text-violet-500'
+          primary: game === 'POWER_UP_3' ? 'bg-rose-600' : 'bg-violet-700', headerText: 'text-white', badgeBg: 'bg-white/20', badgeBorder: 'border-white/30', textMain: game === 'POWER_UP_3' ? 'text-rose-600' : 'text-violet-600', textLight: game === 'POWER_UP_3' ? 'text-rose-400' : 'text-violet-400', bgLight: game === 'POWER_UP_3' ? 'bg-rose-900/40' : 'bg-violet-900/40', borderLight: game === 'POWER_UP_3' ? 'border-rose-500/30' : 'border-violet-500/30', iconColor: 'text-white'
         };
       case 'AMERICAN_THINK':
         return {
@@ -171,7 +170,7 @@ const PublicView = () => {
     if (phase === 'PAUSE_BEFORE_SCRAMBLE') return "Look at the Screen! Memorize the Word!";
     if (phase === 'PAUSE_BEFORE_SPEED_WORDS') return "Get Ready for Speed Words!";
     if (phase.includes('PAUSE_BEFORE_MEMORY')) return `Get Ready for Memory Level ${memLevel}!`;
-    if (phase === 'PAUSE_WOW') return "Prepare for the WOW Moment!";
+    if (phase.includes('PAUSE_WOW')) return "Prepare for the WOW Moment!";
     return "Waiting for judge's cue...";
   };
 
@@ -199,7 +198,7 @@ const PublicView = () => {
 
   const isListeningOrDictationPause = phase.includes('TURN_AROUND') || phase.includes('LISTEN') || phase.includes('DICTATION') || phase === 'WOW_BLIND';
 
-  const isAnySpeedReading = phase === 'SPEED_READING' || phase === 'SPEED_READING_1' || phase === 'SPEED_READING_2' || phase === 'RAPID_SPELL';
+  const isAnySpeedReading = phase.includes('SPEED_READING') || phase === 'RAPID_SPELL';
 
   return (
     <div className="h-screen w-screen bg-slate-50 text-slate-900 flex flex-col font-sans overflow-hidden">
@@ -247,7 +246,7 @@ const PublicView = () => {
         {isAnySpeedReading && displayWords?.length > 0 ? (
           <div className="w-full h-full flex flex-col items-center">
             <div className="flex items-center gap-4 bg-slate-900 px-6 py-2 rounded-full border-4 border-amber-400 shadow-lg mb-4 z-10 shrink-0">
-              <span className="text-white font-black tracking-widest uppercase text-sm leading-none">READING SENSE</span>
+              <span className="text-white font-black tracking-widest uppercase text-sm leading-none">{phase === 'RAPID_SPELL' ? 'RAPID SPELL' : 'READING SENSE'}</span>
               <ArrowRight size={24} className="text-amber-400 animate-pulse" />
               <ArrowRight size={24} className="text-amber-400 animate-pulse" />
               <ArrowRight size={24} className="text-amber-400 animate-pulse" />
@@ -341,7 +340,7 @@ const PublicView = () => {
               {['PICTURE_ID', 'SPEED_CHALLENGE', 'SPEED_IMAGES', 'PARENT_CHILD'].includes(phase) && displayImages?.length > 0 && (
                 <div className="w-full h-full flex flex-col items-center justify-center p-6 md:p-10">
                   <img 
-                    src={['SPEED_CHALLENGE', 'SPEED_IMAGES'].includes(phase) ? displayImages[0] : displayImages[activeImgIdx]} 
+                    src={phase.includes('SPEED') ? displayImages[0] : displayImages[activeImgIdx]} 
                     className="max-h-full rounded-2xl border-8 border-white shadow-xl animate-in zoom-in object-contain" 
                     alt="Recognition" 
                   />
@@ -352,40 +351,40 @@ const PublicView = () => {
               )}
 
               {/* PALABRAS ÚNICAS */}
-              {['WORD_1', 'WORD_2_SENTENCE', 'READ_SPELL', 'SPEED_WORDS', 'READING_WORDS', 'LISTENING_1', 'LISTENING_2'].includes(phase) && displayWords?.length > 0 && (
+              {['WORD_1', 'WORD_2_SENTENCE', 'READ_SPELL', 'SPEED_WORDS', 'READING_WORDS', 'LISTENING_1', 'LISTENING_2', 'LISTEN_SPELL'].includes(phase) && displayWords?.length > 0 && (
                  <div className="w-full h-full flex flex-col items-center justify-between py-10 px-8">
-                   <div className="flex-1 flex items-center justify-center">
-                      <h1 className="text-[10vw] font-black text-white tracking-[0.05em] drop-shadow-2xl text-center leading-none animate-in fade-in">
-                        {formatWord(['SPEED_WORDS'].includes(phase) ? displayWords[0] : displayWords[activeWordIdx])}
-                      </h1>
-                   </div>
-                   {['WORD_1', 'WORD_2_SENTENCE', 'READ_SPELL'].includes(phase) && (
-                     <div className={`w-full max-w-3xl ${theme.bgLight} border ${theme.borderLight} py-4 rounded-2xl backdrop-blur-md`}>
+                    <div className="flex-1 flex items-center justify-center">
+                       <h1 className="text-[10vw] font-black text-white tracking-[0.05em] drop-shadow-2xl text-center leading-none animate-in fade-in">
+                         {formatWord(['SPEED_WORDS'].includes(phase) ? displayWords[0] : displayWords[activeWordIdx])}
+                       </h1>
+                    </div>
+                    {['WORD_1', 'WORD_2_SENTENCE', 'READ_SPELL', 'LISTEN_SPELL'].includes(phase) && (
+                      <div className={`w-full max-w-3xl ${theme.bgLight} border ${theme.borderLight} py-4 rounded-2xl backdrop-blur-md shadow-xl animate-bounce`}>
                         <p className={`${theme.textLight} text-2xl font-black text-center uppercase tracking-[0.15em] italic`}>
-                          Read → Spell → Read {phase === 'WORD_2_SENTENCE' && '→ Sentence'} 
+                           {(phase === 'WORD_1' || phase === 'LISTEN_SPELL') ? "Repeat ➜ Spell ➜ Repeat" : 
+                            (phase === 'WORD_2_SENTENCE') ? "Repeat ➜ Spell ➜ Repeat ➜ Sentence" : "Read → Spell → Read"}
                         </p>
-                     </div>
-                   )}
-                   {phase === 'READING_WORDS' && (
-                     <div className={`w-full max-w-3xl ${theme.bgLight} border ${theme.borderLight} py-4 rounded-2xl backdrop-blur-md`}>
+                      </div>
+                    )}
+                    {phase === 'READING_WORDS' && (
+                      <div className={`w-full max-w-3xl ${theme.bgLight} border ${theme.borderLight} py-4 rounded-2xl backdrop-blur-md`}>
                         <p className={`${theme.textLight} text-2xl font-black text-center uppercase tracking-[0.15em] italic`}>Read Aloud!</p>
-                     </div>
-                   )}
-                   {['LISTENING_1', 'LISTENING_2'].includes(phase) && (
-                     <div className="bg-amber-400 text-amber-950 px-8 py-3 rounded-full font-black text-xl uppercase tracking-widest shadow-lg text-center">
-                        Repeat ➜ Spell ➜ Repeat ➜ Sentence
-                     </div>
-                   )}
+                      </div>
+                    )}
+                    {['LISTENING_1', 'LISTENING_2'].includes(phase) && (
+                      <div className="bg-amber-400 text-amber-950 px-8 py-3 rounded-full font-black text-xl uppercase tracking-widest shadow-lg text-center animate-bounce">
+                        Repeat ➜ Spell ➜ Repeat {phase === 'LISTENING_2' ? "➜ Sentence" : ""}
+                      </div>
+                    )}
                  </div>
               )}
 
-              {/* DICTADO */}
-              {(phase === 'DICTATION_SENTENCE' || phase === 'DICTATION_SPELLING') && (
-                <div className="text-center animate-pulse p-8 flex flex-col items-center justify-center h-full">
-                  <h3 className="text-5xl md:text-6xl font-black text-amber-400 uppercase tracking-tight italic drop-shadow-2xl leading-tight">
-                    {phase === 'DICTATION_SENTENCE' ? 'SENTENCE DICTATION' : 'LETTER-BY-LETTER DICTATION'}
-                  </h3>
-                  <p className="text-slate-300 mt-6 font-black tracking-widest uppercase text-2xl">Listen & Write!</p>
+              {/* DICTADO / ESCRITURA */}
+              {(phase.includes('WRITE') || phase.includes('DICTATION')) && !phase.includes('BOARDS') && (
+                <div className="text-center space-y-8 animate-pulse">
+                  <Edit3 size={150} className="text-amber-400 mx-auto" />
+                  <h1 className="text-8xl font-black text-amber-400 uppercase italic">WRITE NOW!</h1>
+                  <p className="text-white text-3xl font-bold uppercase tracking-widest bg-slate-800 py-3 px-8 rounded-full border border-slate-700 inline-block shadow-xl">Keep boards down</p>
                 </div>
               )}
 
@@ -398,18 +397,27 @@ const PublicView = () => {
                       <img key={i} src={src} className={`${maxW} max-h-[40%] bg-white p-2 rounded-xl border-4 border-slate-700 shadow-lg object-contain animate-in fade-in duration-300`} alt="Memory Card" />
                     );
                   })}
+                  <div className="absolute bottom-10 bg-rose-600 text-white px-10 py-4 rounded-full font-black text-2xl uppercase animate-pulse shadow-2xl">Memorize Everything!</div>
                 </div>
               )}
 
-              {/* BOARDS UP UNIVERSAL */}
+              {phase === 'MEMORY_SPEAK' && (
+                <div className="text-center space-y-6">
+                  <Brain size={150} className="text-sky-400 mx-auto animate-pulse" />
+                  <h1 className="text-8xl font-black text-white uppercase tracking-tighter italic">SPEAK NOW!</h1>
+                  <p className="text-sky-300 text-3xl font-bold uppercase tracking-widest">What was on the screen?</p>
+                </div>
+              )}
+
+              {/* BOARDS UP UNIVERSAL (GIGANTE) */}
               {phase.includes('BOARDS_UP') && (
-                <div className="text-center animate-in zoom-in duration-300 p-8 space-y-6">
-                  <h3 className="text-[5rem] md:text-[7rem] font-black text-amber-400 uppercase tracking-tighter italic animate-bounce">
+                <div className="text-center animate-in zoom-in duration-300 p-8 space-y-10">
+                  <h3 className="text-[10rem] font-black text-amber-400 uppercase tracking-tighter italic animate-bounce leading-none drop-shadow-2xl">
                     BOARDS UP!
                   </h3>
-                  <p className="text-white font-black tracking-[0.2em] uppercase text-4xl bg-slate-800 py-3 px-8 rounded-full border border-slate-700 inline-block shadow-xl">
+                  <div className="bg-white text-slate-900 px-16 py-6 rounded-full font-black text-5xl uppercase shadow-2xl">
                     TURN AROUND!
-                  </p>
+                  </div>
                 </div>
               )}
 
@@ -427,14 +435,14 @@ const PublicView = () => {
               {phase === 'SCRAMBLED_REVEAL' && originalWords?.length > 0 && (
                 <div className="bg-emerald-500 px-20 py-12 rounded-[3rem] border-[12px] border-white shadow-[0_15px_40px_rgba(16,185,129,0.5)] animate-in zoom-in flex flex-col items-center">
                   <p className="text-emerald-100 font-black text-2xl tracking-[0.3em] uppercase mb-4 bg-emerald-600/50 py-2 px-6 rounded-full">CORRECT WORD</p>
-                  <h1 className="text-8xl font-black text-white tracking-widest">{formatWord(originalWords[activeWordIdx])}</h1>
+                  <h1 className="text-8xl font-black text-white tracking-widest lowercase">{formatWord(originalWords[activeWordIdx])}</h1>
                 </div>
               )}
 
               {/* SPELL LAST WORD / STOP */}
               {['SPELL_LAST_WORD_1', 'SPELL_LAST_WORD_2', 'STOP_RECALL'].includes(phase) && (
                 <div className="text-center animate-in zoom-in duration-300 p-8 flex flex-col items-center justify-center h-full">
-                  <h3 className="text-[6rem] font-black text-red-500 uppercase tracking-tight italic animate-bounce drop-shadow-[0_0_30px_rgba(239,68,68,0.6)]">STOP!</h3>
+                  <h3 className="text-[10rem] font-black text-red-500 uppercase tracking-tight italic animate-bounce leading-none drop-shadow-2xl">STOP!</h3>
                   <p className="text-white mt-8 font-black tracking-widest uppercase text-3xl bg-slate-800 py-3 px-8 rounded-full inline-block border border-slate-700 shadow-xl">
                     {phase === 'STOP_RECALL' ? 'Recall word ➜ Say, Spell, Say, Sentence' : 'Spell the LAST word you read!'}
                   </p>

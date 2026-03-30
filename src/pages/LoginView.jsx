@@ -51,7 +51,7 @@ const LoginView = () => {
     } catch (err) {
       console.error("Error detallado:", err);
       // Mensaje más descriptivo para ayudarte a debuguear
-      setError('No se pudo conectar con el servidor. Verifica la URL en Netlify.');
+      setError('No se pudo conectar con el servidor.');
     } finally {
       setIsLoading(false);
     }

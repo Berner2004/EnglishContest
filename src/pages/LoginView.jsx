@@ -9,9 +9,8 @@ const LoginView = () => {
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
-  // 1. URL DINÁMICA: Asegúrate de configurar VITE_API_URL en las variables de entorno de Vercel
-  // Línea 14: Solo la base, sin el /api/login al final
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://concursoengllish.onrender.com';
+  // URL DINÁMICA
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://concursoengllish.onrender.com';
 
   // Limpiar sesión vieja al cargar el Login
   useEffect(() => {
@@ -35,7 +34,6 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://concursoengllish.o
         })
       });
 
-      // Validar si la respuesta es JSON antes de procesar
       const contentType = response.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
         throw new Error("El servidor no respondió con JSON. Verifica el Backend.");
@@ -44,15 +42,19 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://concursoengllish.o
       const data = await response.json();
 
       if (response.ok) {
-        // Guardar datos de sesión
+        // Guardar nombre de usuario genérico
         localStorage.setItem('username', data.username);
         
+        // Redirección basada en ROL exacto
         if (data.rol === 'admin') {
           localStorage.setItem('isAdminAuth', 'true');
           navigate('/admin');
-        } else {
+        } else if (data.rol === 'judge') {
           localStorage.setItem('isJudgeAuth', 'true');
           navigate('/juez'); 
+        } else {
+          setError('Rol no reconocido en el sistema.');
+          localStorage.clear();
         }
       } else {
         // El backend envió un error (401, 404, etc)

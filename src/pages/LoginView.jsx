@@ -12,9 +12,9 @@ const LoginView = () => {
   // URL DINÁMICA
   const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://concursoengllish.onrender.com';
 
-  // Limpiar sesión vieja al cargar el Login
+  // Limpiar sesión vieja al cargar el Login (AHORA USAMOS sessionStorage)
   useEffect(() => {
-    localStorage.clear();
+    sessionStorage.clear();
   }, []);
 
   const handleLogin = async (e) => {
@@ -42,19 +42,19 @@ const LoginView = () => {
       const data = await response.json();
 
       if (response.ok) {
-        // Guardar nombre de usuario genérico
-        localStorage.setItem('username', data.username);
+        // Guardar nombre de usuario genérico en sessionStorage
+        sessionStorage.setItem('username', data.username);
         
         // Redirección basada en ROL exacto
         if (data.rol === 'admin') {
-          localStorage.setItem('isAdminAuth', 'true');
+          sessionStorage.setItem('isAdminAuth', 'true');
           navigate('/admin');
         } else if (data.rol === 'judge') {
-          localStorage.setItem('isJudgeAuth', 'true');
+          sessionStorage.setItem('isJudgeAuth', 'true');
           navigate('/juez'); 
         } else {
           setError('Rol no reconocido en el sistema.');
-          localStorage.clear();
+          sessionStorage.clear();
         }
       } else {
         // El backend envió un error (401, 404, etc)

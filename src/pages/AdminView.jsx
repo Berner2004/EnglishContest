@@ -3,8 +3,10 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { 
   Users, Play, Settings, Info, Award, Loader2, X, 
-  ChevronRight, BookOpen, CheckCircle, XCircle, Trophy 
+  ChevronRight, BookOpen, Trophy, LogOut 
 } from 'lucide-react';
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://concursoengllish.onrender.com';
 
 const AdminView = () => {
   const navigate = useNavigate();
@@ -63,14 +65,14 @@ const AdminView = () => {
       if (categoryName === "GRAND FINAL") {
         const finalCategories = [ "AMERICAN THINK STARTER"];
         const requests = finalCategories.map(cat => 
-          axios.get(`https://concursoengllish.onrender.com/participants/${encodeURIComponent(cat)}`)
+          axios.get(`${API_BASE_URL}/participants/${encodeURIComponent(cat)}`)
         );
         const responses = await Promise.all(requests);
         const allParticipants = responses.flatMap(res => res.data);
         const sortedData = allParticipants.sort((a, b) => a.name.localeCompare(b.name));
         setParticipants(sortedData);
       } else {
-        const response = await axios.get(`https://concursoengllish.onrender.com/participants/${encodeURIComponent(categoryName)}`);
+        const response = await axios.get(`${API_BASE_URL}/participants/${encodeURIComponent(categoryName)}`);
         const sortedData = response.data.sort((a, b) => a.order_number - b.order_number);
         setParticipants(sortedData);
       }
@@ -108,10 +110,16 @@ const AdminView = () => {
     navigate(targetRoute, { state: { participants: presentOnes } });
   };
 
+  // Función para cerrar sesión y limpiar el sessionStorage
+  const handleLogout = () => {
+    sessionStorage.clear();
+    navigate('/login');
+  };
+
   return (
-    <div className="min-h-screen w-full bg-[#F0F7FF] font-sans text-slate-800 overflow-x-hidden">
+    <div className="min-h-screen w-full bg-[#F0F7FF] font-sans text-slate-800 overflow-x-hidden flex flex-col">
       <header className="bg-white/80 backdrop-blur-md sticky top-0 z-20 border-b border-sky-100 w-full px-0">
-        <div className="flex justify-between items-center py-5 px-6 max-w-[1600px] mx-auto w-full">
+        <div className="flex justify-between items-center py-4 px-6 max-w-[1600px] mx-auto w-full">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-sky-500 rounded-lg flex items-center justify-center text-white shadow-lg shadow-sky-200">
               <Award size={24} />
@@ -121,14 +129,26 @@ const AdminView = () => {
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-nowrap">Dashboard de Control</p>
             </div>
           </div>
-          <div className="bg-sky-50 px-4 py-2 rounded-full border border-sky-100 flex items-center gap-2">
-            <div className="w-2 h-2 bg-sky-400 rounded-full animate-pulse"></div>
-            <span className="text-xs font-bold text-sky-600 uppercase tracking-tighter">Sistema de Concurso Online</span>
+          
+          <div className="flex items-center gap-6">
+            <div className="hidden md:flex bg-sky-50 px-4 py-2 rounded-full border border-sky-100 items-center gap-2">
+              <div className="w-2 h-2 bg-sky-400 rounded-full animate-pulse"></div>
+              <span className="text-xs font-bold text-sky-600 uppercase tracking-tighter">Sistema de Concurso Online</span>
+            </div>
+            
+            {/* Botón de Logout añadido */}
+            <button 
+              onClick={handleLogout}
+              className="flex items-center gap-2 text-slate-400 hover:text-red-500 hover:bg-red-50 px-3 py-2 rounded-xl transition-all text-xs font-black uppercase tracking-widest"
+            >
+              <LogOut size={16} />
+              <span>Salir</span>
+            </button>
           </div>
         </div>
       </header>
 
-      <main className={`transition-all duration-500 ${isModalOpen ? 'blur-md scale-[0.98]' : ''} w-full`}>
+      <main className={`flex-1 transition-all duration-500 ${isModalOpen ? 'blur-md scale-[0.98]' : ''} w-full`}>
         <div className="px-6 pt-8 pb-4 max-w-[1600px] mx-auto w-full text-center md:text-left">
           <h2 className="text-4xl font-black text-slate-800 tracking-tighter">Panel de Gestión</h2>
           <p className="text-slate-500 font-medium mt-1 uppercase text-xs tracking-[0.2em]">Selecciona el nivel para configurar la ronda</p>

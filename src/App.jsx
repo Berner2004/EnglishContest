@@ -11,11 +11,12 @@ import AmericanThinkGame from './pages/AmericanThinkGame';
 import GrandFinalView from './pages/GrandFinalView'; 
 import PublicView from './pages/PublicView';
 import LoginView from './pages/LoginView';
-import JudgesView from './pages/JudgeView'; // <-- Nueva importación de la vista de Jueces
+import JudgesView from './pages/JudgeView'; // <-- Asegúrate de que el archivo físico se llame exactamente "JudgeView.jsx"
 
 // COMPONENTE GUARDIÁN: Protege las rutas del administrador
 const ProtectedRoute = ({ children }) => {
-  const isAuthenticated = localStorage.getItem('isAdminAuth') === 'true';
+  // AHORA USA sessionStorage
+  const isAuthenticated = sessionStorage.getItem('isAdminAuth') === 'true';
   
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
@@ -25,7 +26,8 @@ const ProtectedRoute = ({ children }) => {
 
 // COMPONENTE GUARDIÁN: Protege las rutas exclusivas de los jueces
 const ProtectedJudgeRoute = ({ children }) => {
-  const isJudgeAuthenticated = localStorage.getItem('isJudgeAuth') === 'true';
+  // AHORA USA sessionStorage
+  const isJudgeAuthenticated = sessionStorage.getItem('isJudgeAuth') === 'true';
   
   if (!isJudgeAuthenticated) {
     return <Navigate to="/login" replace />;

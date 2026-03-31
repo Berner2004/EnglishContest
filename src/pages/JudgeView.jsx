@@ -5,8 +5,9 @@ import { io } from 'socket.io-client';
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://concursoengllish.onrender.com';
 const socket = io(API_BASE_URL);
 
-// Identificador del juez que inició sesión
-const judgeUsername = localStorage.getItem('username') || 'unknown_judge';
+
+// Identificador del juez que inició sesión (AHORA USA sessionStorage)
+const judgeUsername = sessionStorage.getItem('username') || 'unknown_judge';
 
 const ROUND_INFO = {
   "POWER UP 3": {

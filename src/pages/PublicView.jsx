@@ -1,28 +1,23 @@
 import { useState, useEffect, useRef } from 'react';
 import { Award, Type, Monitor, Star, ArrowRight, Trophy, EyeOff, Brain, Camera, Users, Zap, Edit3 } from 'lucide-react';
-import { io } from 'socket.io-client'; // Importamos Socket.io
+import { io } from 'socket.io-client';
 
-// Conectamos directamente a tu servidor en Render
 const socket = io('https://concursoengllish.onrender.com');
 
 const PublicView = () => {
   const [gameState, setGameState] = useState(null);
   
-  // Referencias para los audios duales
   const audioRefBoardsUp = useRef(null); 
   const audioRefTimeUp = useRef(null); 
 
   useEffect(() => {
-    // Escuchar el evento 'sync_state' que viene del servidor (emitido por el Admin/Juegos)
     socket.on('sync_state', (payload) => {
       setGameState(payload);
       
-      // 1. Audio de "Boards Up" manual (lanzado desde el admin)
       if (payload.triggerAudio && audioRefBoardsUp.current) {
           audioRefBoardsUp.current.play().catch(err => console.error("Audio block:", err));
       }
       
-      // 2. Audio de "Time Up" automático cuando el tiempo llega a 0 en fases de escritura
       if (payload.timeLeft === 0 && 
           (payload.phase.includes('WRITE') || 
            payload.phase.includes('DICTATION'))) {
@@ -32,19 +27,16 @@ const PublicView = () => {
       }
     });
 
-    // Escuchar evento para limpiar la pantalla
     socket.on('clear_state', () => {
       setGameState(null);
     });
 
-    // Limpieza al desmontar el componente
     return () => {
       socket.off('sync_state');
       socket.off('clear_state');
     };
   }, []);
 
-  // --- LÓGICA DE FORMATO DE TEXTO (DÍAS CON MAYÚSCULA, RESTO MINÚSCULA) ---
   const formatWord = (word) => {
     if (!word) return "";
     const days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
@@ -53,6 +45,11 @@ const PublicView = () => {
     if (days.includes(lowerWord)) {
       return lowerWord.charAt(0).toUpperCase() + lowerWord.slice(1);
     }
+    
+    if (word.includes(" ") && /[A-Z]/.test(word)) {
+      return word;
+    }
+
     return lowerWord;
   };
 
@@ -101,7 +98,6 @@ const PublicView = () => {
   const activeImgIdx = imageIndex !== undefined ? imageIndex : (currentIndex !== undefined ? currentIndex : 0);
   const activeWordIdx = currentIndex !== undefined ? currentIndex : 0;
 
-  // Lógica de colores dinámicos por nivel
   const getThemeColors = () => {
     switch (game) {
       case 'LITTLE_STEPS':
@@ -167,11 +163,21 @@ const PublicView = () => {
     if (phase === 'PAUSE_BEFORE_SPEED') return "Prepare for Speed Challenge! Be Fast!";
     if (phase === 'PAUSE_BEFORE_WORDS') return "Get Ready to Read & Spell!";
     if (phase === 'PAUSE_BEFORE_WORD2') return "Next Word: Read, Spell & Sentence!";
-    if (phase === 'PAUSE_BEFORE_SCRAMBLE') return "Look at the Screen! Memorize the Word!";
+    if (phase === 'PAUSE_BEFORE_SCRAMBLE' || phase.startsWith('PAUSE_BEFORE_SCRAMBLE')) return "Look at the Screen! Memorize the Word!";
     if (phase === 'PAUSE_BEFORE_SPEED_WORDS') return "Get Ready for Speed Words!";
     if (phase.includes('PAUSE_BEFORE_MEMORY')) return `Get Ready for Memory Level ${memLevel}!`;
     if (phase.includes('PAUSE_WOW')) return "Prepare for the WOW Moment!";
+    if (phase.includes('REVEAL')) return "Revealing the correct word...";
     return "Waiting for judge's cue...";
+  };
+
+  const getEncouragingMessage = () => {
+    if (phase.includes('SPEED')) return "Stay calm and focus! You are fast! ⚡";
+    if (phase.includes('DICTATION') || phase.includes('LISTEN')) return "Listen carefully! You can do it! 🎧";
+    if (phase.includes('SCRAMBLE')) return "Look closely! Mind power activated! 🧠";
+    if (phase.includes('MEMORY')) return "Photographic memory ready! 📸";
+    if (phase.includes('WOW')) return "This is your moment to shine! ⭐";
+    return "Believe in yourself! You got this! 🌟";
   };
 
   const getStandbyIcon = () => {
@@ -196,7 +202,7 @@ const PublicView = () => {
     return `Participant #${participantNumber || "..."}`;
   };
 
-  const isListeningOrDictationPause = phase.includes('TURN_AROUND') || phase.includes('LISTEN') || phase.includes('DICTATION') || phase === 'WOW_BLIND';
+  const isListeningOrDictationPause = phase.includes('TURN_AROUND') || phase.includes('LISTEN') || phase.startsWith('PAUSE_DICTATION') || phase === 'WOW_BLIND';
 
   const isAnySpeedReading = phase.includes('SPEED_READING') || phase === 'RAPID_SPELL';
 
@@ -272,24 +278,41 @@ const PublicView = () => {
           /* MARCO OSCURO PRINCIPAL PARA EL RESTO DE FASES */
           <div className="w-full h-full max-w-7xl bg-slate-900 rounded-[2rem] border-[12px] border-slate-800 flex flex-col items-center justify-center relative shadow-[0_20px_50px_-15px_rgba(0,0,0,0.6)] overflow-hidden">
               
-              {/* READY Y PAUSAS */}
+              {/* READY Y PAUSAS (Con Animaciones y Mensajes de Ánimo) */}
               {(phase === 'READY' || phase.startsWith('PAUSE')) && (
-                <div className="text-center animate-in zoom-in duration-300 space-y-4">
-                  {getStandbyIcon()}
-                  <h3 className="text-white font-black text-4xl md:text-5xl uppercase tracking-[0.3em] drop-shadow-xl">
+                <div className="text-center animate-in zoom-in duration-300 space-y-6 flex flex-col items-center w-full px-4">
+                  <div className="animate-bounce">
+                    {getStandbyIcon()}
+                  </div>
+                  <h3 className="text-white font-black text-4xl md:text-5xl uppercase tracking-[0.3em] drop-shadow-xl text-center">
                     {phase === 'READY' ? 'SYSTEM READY' : 'STANDBY'}
                   </h3>
                   
                   {isListeningOrDictationPause && (
-                    <h2 className={`text-3xl ${theme.textLight} font-black mt-4 uppercase tracking-widest animate-pulse`}>
-                      "Turn Around & Listen to the Judge"
-                    </h2>
+                    <div className="space-y-4 flex flex-col items-center w-full max-w-3xl">
+                      <h2 className={`text-2xl md:text-3xl lg:text-4xl ${theme.textLight} font-black uppercase tracking-widest animate-pulse bg-slate-800/80 px-8 py-4 rounded-full border border-slate-700 text-center leading-tight`}>
+                        {phase === 'PAUSE_DICTATION_SENTENCE' ? '"Turn Around & Listen to the Sentence"' : 
+                         phase === 'PAUSE_DICTATION_SPELLING' ? '"Turn Around & Listen Letter by Letter"' : 
+                         '"Turn Around & Listen to the Judge"'}
+                      </h2>
+                    </div>
                   )}
                   
                   {!isListeningOrDictationPause && (
-                    <p className={`${theme.textLight} font-bold tracking-widest uppercase text-xl ${theme.bgLight} py-2 px-6 rounded-full border ${theme.borderLight} inline-block mt-4 shadow-lg`}>
-                      {getStandbyMessage()}
-                    </p>
+                    <div className="flex flex-col items-center space-y-4">
+                      <p className={`${theme.textLight} font-bold tracking-widest uppercase text-xl ${theme.bgLight} py-3 px-8 rounded-full border ${theme.borderLight} shadow-lg animate-pulse`}>
+                        {getStandbyMessage()}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* MENSAJE DE ÁNIMO DINÁMICO DEBAJO */}
+                  {phase !== 'READY' && (
+                    <div className="mt-8 animate-bounce">
+                      <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-rose-400 font-black text-xl md:text-2xl uppercase tracking-[0.2em] drop-shadow-lg text-center px-4">
+                        {getEncouragingMessage()}
+                      </span>
+                    </div>
                   )}
                 </div>
               )}
@@ -373,18 +396,23 @@ const PublicView = () => {
                     )}
                     {['LISTENING_1', 'LISTENING_2'].includes(phase) && (
                       <div className="bg-amber-400 text-amber-950 px-8 py-3 rounded-full font-black text-xl uppercase tracking-widest shadow-lg text-center animate-bounce">
-                        Repeat ➜ Spell ➜ Repeat {phase === 'LISTENING_2' ? "➜ Sentence" : ""}
+                        {game === 'POWER_UP_3' ? "Repeat ➜ Spell ➜ Repeat ➜ Sentence (6+ words)" : 
+                          `Repeat ➜ Spell ➜ Repeat ${phase === 'LISTENING_2' ? "➜ Sentence" : ""}`}
                       </div>
                     )}
                  </div>
               )}
 
-              {/* DICTADO / ESCRITURA */}
-              {(phase.includes('WRITE') || phase.includes('DICTATION')) && !phase.includes('BOARDS') && (
-                <div className="text-center space-y-8 animate-pulse">
-                  <Edit3 size={150} className="text-amber-400 mx-auto" />
-                  <h1 className="text-8xl font-black text-amber-400 uppercase italic">WRITE NOW!</h1>
-                  <p className="text-white text-3xl font-bold uppercase tracking-widest bg-slate-800 py-3 px-8 rounded-full border border-slate-700 inline-block shadow-xl">Keep boards down</p>
+              {/* DICTADO / ESCRITURA DINÁMICA */}
+              {(phase.includes('WRITE') || phase.includes('DICTATION')) && !phase.includes('BOARDS') && !phase.includes('PAUSE') && (
+                <div className="text-center space-y-8 animate-pulse flex flex-col items-center w-full px-4">
+                  <Edit3 size={150} className="text-amber-400 mx-auto drop-shadow-lg" />
+                  <h1 className="text-6xl md:text-7xl lg:text-8xl font-black text-amber-400 uppercase italic tracking-tighter text-center leading-tight drop-shadow-2xl">
+                     {phase.includes('SCRAMBLED') ? 'WRITE FAST!' : 
+                      phase === 'DICTATION_SENTENCE' ? 'SENTENCE DICTATION!' : 
+                      phase === 'DICTATION_SPELLING' ? 'LETTER BY LETTER!' : 'LISTEN & WRITE!'}
+                  </h1>
+                  <p className="text-white text-2xl md:text-3xl font-bold uppercase tracking-widest bg-slate-800 py-3 px-8 rounded-full border border-slate-700 inline-block shadow-xl">Keep boards down</p>
                 </div>
               )}
 
@@ -435,17 +463,26 @@ const PublicView = () => {
               {phase === 'SCRAMBLED_REVEAL' && originalWords?.length > 0 && (
                 <div className="bg-emerald-500 px-20 py-12 rounded-[3rem] border-[12px] border-white shadow-[0_15px_40px_rgba(16,185,129,0.5)] animate-in zoom-in flex flex-col items-center">
                   <p className="text-emerald-100 font-black text-2xl tracking-[0.3em] uppercase mb-4 bg-emerald-600/50 py-2 px-6 rounded-full">CORRECT WORD</p>
-                  <h1 className="text-8xl font-black text-white tracking-widest lowercase">{formatWord(originalWords[activeWordIdx])}</h1>
+                  <h1 className="text-8xl font-black text-white tracking-widest">{formatWord(originalWords[activeWordIdx])}</h1>
                 </div>
               )}
 
-              {/* SPELL LAST WORD / STOP */}
+              {/* SPELL LAST WORD / STOP (DISEÑO EXACTO A LA IMAGEN SOLICITADA) */}
               {['SPELL_LAST_WORD_1', 'SPELL_LAST_WORD_2', 'STOP_RECALL'].includes(phase) && (
-                <div className="text-center animate-in zoom-in duration-300 p-8 flex flex-col items-center justify-center h-full">
-                  <h3 className="text-[10rem] font-black text-red-500 uppercase tracking-tight italic animate-bounce leading-none drop-shadow-2xl">STOP!</h3>
-                  <p className="text-white mt-8 font-black tracking-widest uppercase text-3xl bg-slate-800 py-3 px-8 rounded-full inline-block border border-slate-700 shadow-xl">
-                    {phase === 'STOP_RECALL' ? 'Recall word ➜ Say, Spell, Say, Sentence' : 'Spell the LAST word you read!'}
-                  </p>
+                <div className="text-center animate-in zoom-in duration-300 p-10 flex flex-col items-center justify-center h-full w-full">
+                  <h3 className="text-[10rem] font-black text-red-500 uppercase tracking-tight italic animate-bounce drop-shadow-[0_0_40px_rgba(239,68,68,0.8)] leading-none">STOP!</h3>
+                  
+                  <div className="bg-slate-800/90 px-12 py-8 rounded-[3rem] border border-slate-700 shadow-2xl mt-12 w-11/12 max-w-5xl">
+                    <p className="text-white font-black tracking-widest uppercase text-4xl md:text-5xl drop-shadow-md">
+                      Recall LAST word ➔ Say, Spell, Say, Sentence
+                    </p>
+                  </div>
+
+                  <div className="mt-8 bg-[#0f172a] py-3 px-10 rounded-[2rem] border border-rose-500/30 shadow-lg">
+                    <p className="text-rose-400 font-black text-2xl md:text-3xl uppercase tracking-widest drop-shadow-md">
+                      (Sentence must be 6+ words)
+                    </p>
+                  </div>
                 </div>
               )}
 

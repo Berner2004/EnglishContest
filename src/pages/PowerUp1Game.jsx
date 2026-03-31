@@ -52,60 +52,60 @@ const PowerUp1Game = () => {
   const audioRefBoardsUp = useRef(new Audio('/audio/boards-up.mp3'));
   const audioRefTimeOut = useRef(new Audio('/sounds/time.mp3'));
 
-  // EMISIÓN DE LIMPIEZA
+  // --- REGLA ORTOGRÁFICA: TODO MINÚSCULA EXCEPTO LA 1RA LETRA DE LOS DÍAS ---
+  const formatFinalWord = (word) => {
+    if (!word) return "";
+    const days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+    const lowerWord = word.toLowerCase().trim();
+    if (days.includes(lowerWord)) {
+      return lowerWord.charAt(0).toUpperCase() + lowerWord.slice(1);
+    }
+    return lowerWord;
+  };
+
   useEffect(() => {
     return () => {
       socket.emit('clear_state');
     };
   }, []);
 
-  // EMISIÓN DE ESTADO EN VIVO
   useEffect(() => {
     socket.emit('sync_state', {
       game: 'POWER_UP_1',
       round, phase, timeLeft, 
-      displayImages, displayWords, originalWords, currentIndex,
+      displayImages, 
+      displayWords: displayWords.map(w => w), // Enviar tal cual está formateado
+      originalWords: originalWords.map(formatFinalWord),
+      currentIndex,
       participantNumber: currentChild?.order_number,
       triggerAudio: phase.includes('BOARDS_UP') && timeLeft === settings.boardsUpTime 
     });
   }, [round, phase, timeLeft, displayImages, displayWords, originalWords, currentIndex, currentChild]);
 
-  // MOTOR DEL RELOJ INDEPENDIENTE
+  // MOTOR DEL RELOJ CON ALARMA AL FINAL (0s)
   useEffect(() => {
-    let interval = null;
     if (isActive && timeLeft > 0) {
-      interval = setInterval(() => {
+      intervalRef.current = setInterval(() => {
         setTimeLeft(prev => prev - 1);
       }, 1000);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isActive, timeLeft]);
-
-  // EVALUADOR DE FIN DE TIEMPO
-  useEffect(() => {
-    if (isActive && timeLeft === 0) {
+    } else if (timeLeft === 0 && isActive) {
       setIsActive(false); 
-      handleAutoTransition(); 
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActive, timeLeft]);
+      
+      const shouldPlayAlarm = [
+        'WORD_1', 'WORD_2_SENTENCE', 
+        'SCRAMBLED_WRITE', 'DICTATION_SENTENCE', 'DICTATION_SPELLING',
+        'SPEED_READING'
+      ].includes(phase);
 
-  // ALARMA INTELIGENTE
-  useEffect(() => {
-    if (isActive && timeLeft > 0) {
-      const isBoardWrite = ['SCRAMBLED_WRITE', 'DICTATION_SENTENCE', 'DICTATION_SPELLING'].includes(phase);
-      const isSingleBeep = ['WORD_1', 'WORD_2_SENTENCE', 'SPEED_READING'].includes(phase); 
-
-      if ((isBoardWrite && timeLeft <= 4) || (isSingleBeep && timeLeft === 1)) {
-        audioRefTimeOut.current.currentTime = 0; 
-        audioRefTimeOut.current.volume = 1.0;    
+      if (shouldPlayAlarm) {
+        audioRefTimeOut.current.currentTime = 0;
         audioRefTimeOut.current.play().catch(e => console.log("Audio Error:", e));
       }
+
+      handleAutoTransition(); 
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeLeft]);
+    return () => clearInterval(intervalRef.current);
+  }, [isActive, timeLeft, phase]);
 
   const handleAutoTransition = () => {
     if (phase === 'PICTURE_ID') {
@@ -182,7 +182,7 @@ const PowerUp1Game = () => {
     }
     else if (phase === 'PAUSE_BEFORE_WORDS') {
       setPhase('WORD_1');
-      setDisplayWords(getWords(2));
+      setDisplayWords(getWords(2).map(formatFinalWord));
       setCurrentIndex(0);
       setTimeLeft(settings.word1Time);
       setIsActive(true);
@@ -220,19 +220,7 @@ const PowerUp1Game = () => {
 
   const skipPhase = () => {
     setIsActive(false);
-    if (phase === 'PICTURE_ID') {
-      if (currentIndex < 2) {
-        setCurrentIndex(prev => prev + 1);
-        setTimeLeft(settings.idTime);
-        setIsActive(true);
-      } else {
-        setPhase('PAUSE_BEFORE_WORDS');
-        setCurrentIndex(0);
-        setTimeLeft(0);
-      }
-    } else {
-      handleAutoTransition();
-    }
+    handleAutoTransition();
   };
 
   const goToNextStudent = () => {
@@ -283,9 +271,19 @@ const PowerUp1Game = () => {
     return [...words];
   };
 
+  // --- LÓGICA SCRAMBLE: MINÚSCULAS CON RESPETO A LOS DÍAS ---
   const scrambleWord = (word) => {
-    const cleanWord = word.replace(/\s+/g, '');
+    const isDay = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].includes(word.toLowerCase().trim());
+    
+    // Forzamos minúscula a la palabra limpia antes de separarla
+    const cleanWord = word.toLowerCase().replace(/\s+/g, '');
     let letters = cleanWord.split('');
+    
+    // Solo capitalizamos si es un día
+    if (isDay) {
+      letters[0] = letters[0].toUpperCase();
+    }
+
     let scrambled = cleanWord;
     let attempts = 0;
     while (attempts < 50) {
@@ -298,7 +296,7 @@ const PowerUp1Game = () => {
       for (let i = 0; i < cleanWord.length; i++) {
         if (scrambled[i] === cleanWord[i]) samePos++;
       }
-      if (scrambled !== cleanWord && samePos <= Math.ceil(cleanWord.length * 0.3)) break; 
+      if (scrambled.toLowerCase() !== cleanWord.toLowerCase() && samePos <= Math.ceil(cleanWord.length * 0.3)) break; 
       attempts++;
     }
     return letters.join(' ');
@@ -324,7 +322,7 @@ const PowerUp1Game = () => {
 
   const startRound3 = () => {
     setPhase('PAUSE_BEFORE_SPEED');
-    setDisplayWords(getWords(40)); 
+    setDisplayWords(getWords(40).map(formatFinalWord)); 
   };
 
   const handleResetTurn = () => {
@@ -423,8 +421,8 @@ const PowerUp1Game = () => {
             {getPhaseDescription()}
           </p>
         </div>
-        <div className={`px-10 py-4 rounded-[2rem] border-4 transition-all shadow-lg ${timeLeft <= 4 && isActive && !phase.includes('PAUSE') && !phase.includes('REVEAL') && phase !== 'READY' ? 'bg-red-50 border-red-500 scale-110' : 'bg-slate-900 border-slate-700'}`}>
-          <span className={`text-5xl font-mono font-black tabular-nums ${timeLeft <= 4 && isActive && !phase.includes('PAUSE') && !phase.includes('REVEAL') && phase !== 'READY' ? 'text-red-600 animate-pulse' : 'text-white'}`}>
+        <div className={`px-10 py-4 rounded-[2rem] border-4 transition-all shadow-lg ${timeLeft > 0 && timeLeft <= 4 && !phase.includes('PAUSE') && !phase.includes('BOARDS_UP') && !phase.includes('REVEAL') && phase !== 'READY' ? 'bg-red-50 border-red-500 scale-110' : 'bg-slate-900 border-slate-700'}`}>
+          <span className={`text-5xl font-mono font-black tabular-nums ${timeLeft > 0 && timeLeft <= 4 && !phase.includes('PAUSE') && !phase.includes('BOARDS_UP') && !phase.includes('REVEAL') && phase !== 'READY' ? 'text-red-600 animate-pulse' : 'text-white'}`}>
             {timeLeft}<span className="text-2xl ml-1">s</span>
           </span>
         </div>
@@ -439,13 +437,14 @@ const PowerUp1Game = () => {
               <ArrowRight size={36} className="text-amber-400 animate-pulse" />
               <ArrowRight size={36} className="text-amber-400 animate-pulse" />
             </div>
-            <div className="flex-1 w-full max-w-7xl bg-slate-900 rounded-[3rem] border-[16px] border-slate-800 flex flex-col items-center justify-center relative shadow-[0_35px_60px_-15px_rgba(0,0,0,0.6)] overflow-hidden">
+            <div className="flex-1 w-full max-w-7xl bg-slate-900 rounded-[3rem] border-[16px] border-slate-800 flex flex-col items-center justify-center relative shadow-2xl overflow-hidden">
                 <div className="w-full h-full grid grid-cols-5 grid-rows-8 gap-2 p-6 bg-white overflow-hidden rounded-[1.5rem]">
                   {displayWords.map((word, i) => (
                     <div key={`speed-${i}`} className="bg-slate-50 border-2 border-slate-200 rounded-xl p-2 flex items-center gap-2 shadow-sm">
                       <span className="bg-violet-600 text-white w-8 h-8 rounded-lg flex items-center justify-center font-black text-sm shadow-md shrink-0">
                         {i + 1}
                       </span>
+                      {/* SIN CLASES DE MAYUSCULAS */}
                       <span className="text-base font-black text-slate-800 truncate leading-none">{word}</span>
                     </div>
                   ))}
@@ -474,7 +473,7 @@ const PowerUp1Game = () => {
                      {phase === 'PAUSE_BEFORE_SPEED' && "Prepare for Speed Reading Challenge"}
                   </p>
                   <br/>
-                  <button onClick={startNextPhase} className="mt-4 bg-violet-600 hover:bg-violet-500 px-24 py-8 rounded-[2.5rem] font-black text-white text-3xl shadow-[0_10px_0_0_#4c1d95] active:shadow-none active:translate-y-[10px] transition-all">
+                  <button onClick={startNextPhase} className="mt-4 bg-violet-600 hover:bg-violet-500 px-24 py-8 rounded-[2.5rem] font-black text-white text-3xl shadow-[0_10px_0_0_#4c1d95] active:shadow-none active:translate-y-[15px] transition-all">
                     {phase === 'READY' ? `START ${round === 2 ? 'GROUP ACTIVITY' : 'TURN'}` : 'CONTINUE'}
                   </button>
                 </div>
@@ -487,13 +486,15 @@ const PowerUp1Game = () => {
               
               {(phase === 'WORD_1' || phase === 'WORD_2_SENTENCE') && (
                 <div className="flex items-center justify-center w-full px-8">
+                  {/* SIN CLASES DE MAYUSCULAS */}
                   <h1 className="text-[10vw] font-black text-white tracking-[0.05em] drop-shadow-2xl text-center leading-tight break-words">{displayWords[currentIndex]}</h1>
                 </div>
               )}
               {phase === 'SCRAMBLED_VIEW' && (
                 <div className="text-center animate-in zoom-in w-full px-8">
                   <p className="text-violet-400 font-black text-3xl tracking-[0.4em] mb-10 animate-pulse">MEMORIZE SCRAMBLE!</p>
-                  <h1 className="text-[8vw] font-black text-white tracking-[0.3em] drop-shadow-2xl uppercase break-words leading-tight">{displayWords[currentIndex]}</h1>
+                  {/* SIN CLASES DE MAYUSCULAS */}
+                  <h1 className="text-[8vw] font-black text-white tracking-[0.3em] drop-shadow-2xl break-words leading-tight">{displayWords[currentIndex]}</h1>
                 </div>
               )}
 
@@ -513,6 +514,7 @@ const PowerUp1Game = () => {
               {phase === 'SCRAMBLED_REVEAL' && originalWords?.length > 0 && (
                 <div className="bg-emerald-500 px-12 md:px-32 py-16 md:py-20 rounded-[4rem] border-[16px] border-white shadow-2xl animate-in zoom-in max-w-[90%]">
                   <p className="text-emerald-100 font-black text-2xl md:text-3xl tracking-[0.3em] uppercase mb-6 text-center">CORRECT WORD</p>
+                  {/* SIN CLASES DE MAYUSCULAS */}
                   <h1 className="text-7xl md:text-9xl font-black text-white tracking-widest text-center break-words leading-tight">{originalWords[currentIndex]}</h1>
                 </div>
               )}

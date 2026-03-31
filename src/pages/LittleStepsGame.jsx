@@ -104,33 +104,43 @@ const LittleStepsGame = () => {
     };
   }, [isActive, timeLeft]);
 
-  // EVALUADOR FIN DE TIEMPO
+  // EVALUADOR FIN DE TIEMPO CON ALARMA AL FINAL (0s)
   useEffect(() => {
     if (isActive && timeLeft === 0) {
       setIsActive(false); 
+
+      // Alarma suena justo cuando cambia la pantalla
+      const shouldPlayAlarm = ['SPEED_CHALLENGE', 'MEMORY_SPEAK', 'PARENT_CHILD'].includes(phase);
+
+      if (shouldPlayAlarm) {
+        audioRefTimeOut.current.currentTime = 0;
+        audioRefTimeOut.current.play().catch(e => console.log("Audio Error:", e));
+      }
+
       handleAutoTransition(); 
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActive, timeLeft]);
+  }, [isActive, timeLeft, phase]);
 
   // EFECTOS POR SEGUNDO
   useEffect(() => {
     if (isActive && timeLeft > 0) {
       const isBoardWrite = ['PARENT_CHILD'].includes(phase); 
-      const isSingleBeep = ['SPEED_CHALLENGE', 'MEMORY_SPEAK', 'PARENT_CHILD'].includes(phase); 
 
-      if ((isBoardWrite && timeLeft <= 4) || (isSingleBeep && timeLeft === 1)) {
+      // Mantenemos la cuenta regresiva normal (4, 3, 2, 1) para las fases de escritura en pizarra
+      if (isBoardWrite && timeLeft <= 4) {
         audioRefTimeOut.current.currentTime = 0; 
         audioRefTimeOut.current.volume = 1.0;    
         audioRefTimeOut.current.play().catch(e => console.log("Audio Error:", e));
       }
 
+      // Cambio de imagen en velocidad
       if (phase === 'SPEED_CHALLENGE' && timeLeft % 2 === 0) {
         setDisplayImages(getImages(1));
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeLeft]);
+  }, [timeLeft, phase, isActive]);
 
   const handleAutoTransition = () => {
     if (phase === 'PICTURE_ID') {

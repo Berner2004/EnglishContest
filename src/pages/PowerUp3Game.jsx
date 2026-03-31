@@ -54,6 +54,17 @@ const PowerUp3Game = () => {
   const audioRefBoardsUp = useRef(new Audio('/audio/boards-up.mp3'));
   const audioRefTimeOut = useRef(new Audio('/sounds/time.mp3'));
 
+  // --- REGLA ORTOGRÁFICA (DÍAS EN MAYÚSCULA) ---
+  const formatFinalWord = (word) => {
+    if (!word) return "";
+    const days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+    const lowerWord = word.toLowerCase().trim();
+    if (days.includes(lowerWord)) {
+      return lowerWord.charAt(0).toUpperCase() + lowerWord.slice(1);
+    }
+    return lowerWord;
+  };
+
   // EMISIÓN DE LIMPIEZA
   useEffect(() => {
     return () => {
@@ -66,7 +77,9 @@ const PowerUp3Game = () => {
     socket.emit('sync_state', {
       game: 'POWER_UP_3',
       round, phase, timeLeft, 
-      displayWords, originalWords, currentIndex,
+      displayWords: displayWords.map(w => w), 
+      originalWords: originalWords.map(formatFinalWord),
+      currentIndex,
       participantNumber: currentChild?.order_number,
       triggerAudio: phase.includes('BOARDS_UP') && timeLeft === settings.boardsUpTime 
     });
@@ -85,29 +98,26 @@ const PowerUp3Game = () => {
     };
   }, [isActive, timeLeft]);
 
-  // EVALUADOR DE FIN DE TIEMPO
+  // EVALUADOR DE FIN DE TIEMPO CON ALARMA AL FINAL (0s)
   useEffect(() => {
     if (isActive && timeLeft === 0) {
       setIsActive(false); 
+      
+      const shouldPlayAlarm = [
+        'LISTENING_1', 'LISTENING_2', 
+        'SCRAMBLED_WRITE', 'DICTATION_SENTENCE', 'DICTATION_SPELLING',
+        'SPEED_READING_1', 'SPEED_READING_2', 'SPELL_LAST_WORD_1', 'SPELL_LAST_WORD_2'
+      ].includes(phase);
+
+      if (shouldPlayAlarm) {
+        audioRefTimeOut.current.currentTime = 0;
+        audioRefTimeOut.current.play().catch(e => console.log("Audio Error:", e));
+      }
+
       handleAutoTransition(); 
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActive, timeLeft]);
-
-  // ALARMA INTELIGENTE
-  useEffect(() => {
-    if (isActive && timeLeft > 0) {
-      const isBoardWrite = ['SCRAMBLED_WRITE', 'DICTATION_SENTENCE', 'DICTATION_SPELLING'].includes(phase);
-      const isSingleBeep = ['LISTENING_1', 'LISTENING_2', 'SPEED_READING_1', 'SPEED_READING_2', 'SPELL_LAST_WORD_1', 'SPELL_LAST_WORD_2'].includes(phase); 
-
-      if ((isBoardWrite && timeLeft <= 4) || (isSingleBeep && timeLeft === 1)) {
-        audioRefTimeOut.current.currentTime = 0; 
-        audioRefTimeOut.current.volume = 1.0;    
-        audioRefTimeOut.current.play().catch(e => console.log("Audio Error:", e));
-      }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeLeft]);
+  }, [isActive, timeLeft, phase]);
 
   const handleAutoTransition = () => {
     if (phase === 'READING_WORDS') {
@@ -133,19 +143,22 @@ const PowerUp3Game = () => {
       setIsActive(true);
     }
     else if (phase === 'SCRAMBLED_WRITE') {
-      setPhase('BOARDS_UP_SCRAMBLE');
-      setTimeLeft(settings.boardsUpTime); 
-      audioRefBoardsUp.current.play().catch(e => console.log(e));
-      setIsActive(true);
+      // LÓGICA SCRAMBLE: Palabra 1 -> Palabra 2 -> Palabra 3 -> BOARDS UP
+      if (currentIndex < 2) {
+        const nextIdx = currentIndex + 1;
+        setCurrentIndex(nextIdx);
+        setPhase(`PAUSE_BEFORE_SCRAMBLE_${nextIdx + 1}`);
+      } else {
+        // Solo la 3ra palabra dispara el Boards Up
+        setPhase('BOARDS_UP_SCRAMBLE');
+        setTimeLeft(settings.boardsUpTime); 
+        audioRefBoardsUp.current.play().catch(e => console.log(e));
+        setIsActive(true);
+      }
     }
     else if (phase === 'BOARDS_UP_SCRAMBLE') {
-      if (currentIndex < 2) {
-        setCurrentIndex(prev => prev + 1);
-        setPhase(`PAUSE_BEFORE_SCRAMBLE_${currentIndex + 2}`);
-      } else {
-        setCurrentIndex(0);
-        setPhase('PAUSE_BEFORE_REVEAL');
-      }
+      setCurrentIndex(0);
+      setPhase('PAUSE_BEFORE_REVEAL'); // PAUSA ANTES DEL PRIMER REVEAL
     }
     else if (phase === 'SCRAMBLED_REVEAL') {
       if (currentIndex < 2) { 
@@ -318,8 +331,16 @@ const PowerUp3Game = () => {
   };
 
   const scrambleWord = (word) => {
+    const isDay = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].includes(word.toLowerCase().trim());
     const cleanWord = word.replace(/\s+/g, '');
     let letters = cleanWord.split('');
+    
+    // Forzamos mayúscula si es día antes de mezclar
+    if (isDay) {
+      letters = cleanWord.toLowerCase().split('');
+      letters[0] = letters[0].toUpperCase();
+    }
+
     let scrambled = cleanWord;
     let attempts = 0;
     
@@ -333,14 +354,10 @@ const PowerUp3Game = () => {
       for (let i = 0; i < cleanWord.length; i++) {
         if (scrambled[i] === cleanWord[i]) samePos++;
       }
-      if (scrambled !== cleanWord && samePos <= Math.ceil(cleanWord.length * 0.3)) {
+      if (scrambled.toLowerCase() !== cleanWord.toLowerCase() && samePos <= Math.ceil(cleanWord.length * 0.3)) {
         break; 
       }
       attempts++;
-    }
-    if (scrambled === cleanWord) {
-       letters = cleanWord.split('');
-       letters.push(letters.shift()); 
     }
     return letters.join(' ');
   };
@@ -348,7 +365,7 @@ const PowerUp3Game = () => {
   const startRound1 = () => {
     setUsedWords(new Set());
     setPhase('READING_WORDS');
-    setDisplayWords(getWords(5)); 
+    setDisplayWords(getWords(5).map(formatFinalWord)); 
     setCurrentIndex(0);
     setTimeLeft(settings.readTime); 
     setIsActive(true);
@@ -366,7 +383,7 @@ const PowerUp3Game = () => {
   const startRound3 = () => {
     setUsedWords(new Set());
     setPhase('PAUSE_BEFORE_SPEED_1');
-    setDisplayWords(getWords(49)); 
+    setDisplayWords(getWords(49).map(formatFinalWord)); 
   };
 
   const handleResetTurn = () => {
@@ -431,7 +448,7 @@ const PowerUp3Game = () => {
     if (phase === 'PAUSE_BEFORE_SPEED_1') return "Up Next: Speed Reading Part 1.";
     if (phase === 'PAUSE_BEFORE_SPEED_2') return "Up Next: Speed Reading Part 2.";
 
-    if (phase === 'READING_WORDS') return "Task: Student reads the 3 words on screen.";
+    if (phase === 'READING_WORDS') return "Task: Student reads the words on screen.";
     if (phase === 'LISTENING_1' || phase === 'LISTENING_2') return "Task: Student repeats, spells, repeats, and makes a sentence.";
     if (phase === 'SCRAMBLED_VIEW') return "Task: Students memorize the scrambled word.";
     if (phase === 'SCRAMBLED_WRITE') return "Task: Students write the unscrambled word on boards.";
@@ -439,7 +456,7 @@ const PowerUp3Game = () => {
     if (phase === 'SCRAMBLED_REVEAL') return "Action: Displaying the correct word on screen.";
     if (phase === 'DICTATION_SENTENCE') return "Task: Dictate a full sentence. Students write.";
     if (phase === 'DICTATION_SPELLING') return "Task: Dictate a word letter by letter. Students write.";
-    if (phase === 'SPEED_READING_1' || phase === 'SPEED_READING_2') return "Task: Students read the sequence of words quickly.";
+    if (phase.includes('SPEED_READING')) return "Task: Students read the sequence of words quickly.";
     if (phase.startsWith('SPELL_LAST_WORD')) return "Task: Student spells the LAST word they read.";
     
     if (phase === 'CONTEST_CLOSING') return "The contest is completely finished.";
@@ -574,7 +591,7 @@ const PowerUp3Game = () => {
             {phase === 'SCRAMBLED_VIEW' && (
               <div className="text-center animate-in zoom-in duration-200 w-full px-8">
                 <p className="text-rose-400 font-black text-3xl tracking-[0.4em] mb-10 animate-pulse">MEMORIZE SCRAMBLE!</p>
-                <h1 className="text-[8vw] font-black text-white tracking-[0.4em] drop-shadow-2xl leading-tight uppercase break-words">{displayWords[currentIndex]}</h1>
+                <h1 className="text-[8vw] font-black text-white tracking-[0.4em] drop-shadow-2xl leading-tight break-words">{displayWords[currentIndex]}</h1>
               </div>
             )}
 
@@ -597,7 +614,7 @@ const PowerUp3Game = () => {
             {phase === 'SCRAMBLED_REVEAL' && originalWords?.length > 0 && (
               <div className="bg-emerald-500 px-12 md:px-32 py-16 md:py-20 rounded-[4rem] border-[16px] border-white shadow-2xl animate-in zoom-in max-w-[90%]">
                 <p className="text-emerald-100 font-black text-2xl md:text-3xl tracking-[0.3em] uppercase mb-6 text-center">CORRECT WORD</p>
-                <h1 className="text-7xl md:text-9xl font-black text-white tracking-widest text-center uppercase break-words leading-tight">{originalWords[currentIndex]}</h1>
+                <h1 className="text-7xl md:text-9xl font-black text-white tracking-widest text-center break-words leading-tight">{originalWords[currentIndex]}</h1>
               </div>
             )}
 

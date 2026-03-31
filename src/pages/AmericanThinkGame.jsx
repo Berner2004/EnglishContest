@@ -32,7 +32,7 @@ const AmericanThinkGame = () => {
     scrambledWrite: 8,    
     boardsUpTime: 10,    
     dictationSent: 40,    
-    dictationSpell: 80,   
+    dictationSpell: 50,   
     speedRead: 10,        
     recallTime: 18        
   };
@@ -70,7 +70,6 @@ const AmericanThinkGame = () => {
     });
   }, [round, phase, timeLeft, displayWords, originalWords, currentIndex, currentChild]);
 
-  // MOTOR DEL RELOJ MODIFICADO PARA ALARMA AL FINAL
   useEffect(() => {
     if (isActive && timeLeft > 0) {
       intervalRef.current = setInterval(() => {
@@ -79,7 +78,6 @@ const AmericanThinkGame = () => {
     } else if (timeLeft === 0 && isActive) {
       setIsActive(false); 
       
-      // LOGICA DE ALARMA: Suena justo al llegar a 0 (cuando cambia la pantalla)
       const shouldPlayAlarm = [
         'LISTENING_1', 'LISTENING_2', 
         'SCRAMBLED_WRITE', 'DICTATION_SENTENCE', 'DICTATION_SPELLING',
@@ -102,12 +100,6 @@ const AmericanThinkGame = () => {
       setCurrentIndex(1);
     }
     else if (phase === 'LISTENING_2') {
-      setPhase('BOARDS_UP_ROUND1');
-      setTimeLeft(settings.boardsUpTime);
-      audioRefBoardsUp.current.play().catch(e => console.log(e));
-      setIsActive(true);
-    }
-    else if (phase === 'BOARDS_UP_ROUND1') {
       goToNextStudent();
     }
     else if (phase === 'SCRAMBLED_VIEW') {
@@ -116,19 +108,19 @@ const AmericanThinkGame = () => {
       setIsActive(true);
     }
     else if (phase === 'SCRAMBLED_WRITE') {
-      setPhase('BOARDS_UP_SCRAMBLE');
-      setTimeLeft(settings.boardsUpTime);
-      audioRefBoardsUp.current.play().catch(e => console.log(e));
-      setIsActive(true);
-    }
-    else if (phase === 'BOARDS_UP_SCRAMBLE') {
       if (currentIndex === 0) {
         setCurrentIndex(1);
         setPhase('PAUSE_BEFORE_SCRAMBLE_2');
       } else {
-        setCurrentIndex(0);
-        setPhase('PAUSE_BEFORE_REVEAL');
+        setPhase('BOARDS_UP_SCRAMBLE');
+        setTimeLeft(settings.boardsUpTime);
+        audioRefBoardsUp.current.play().catch(e => console.log(e));
+        setIsActive(true);
       }
+    }
+    else if (phase === 'BOARDS_UP_SCRAMBLE') {
+      setCurrentIndex(0); 
+      setPhase('PAUSE_BEFORE_REVEAL');
     }
     else if (phase === 'SCRAMBLED_REVEAL') {
       if (currentIndex === 0) { 
@@ -318,7 +310,7 @@ const AmericanThinkGame = () => {
     if (phase === 'LISTENING_1' || phase === 'PAUSE_LISTEN_1') {
       setPhase('PAUSE_LISTEN_1');
     } 
-    else if (phase === 'LISTENING_2' || phase === 'PAUSE_LISTEN_2' || phase === 'BOARDS_UP_ROUND1') {
+    else if (phase === 'LISTENING_2' || phase === 'PAUSE_LISTEN_2') {
       setPhase('PAUSE_LISTEN_2');
     } 
     else if (phase === 'SCRAMBLED_VIEW' || phase === 'SCRAMBLED_WRITE' || phase === 'BOARDS_UP_SCRAMBLE') {
@@ -344,6 +336,41 @@ const AmericanThinkGame = () => {
     }
   };
 
+  // --- FUNCIONES AÑADIDAS PARA LAS DESCRIPCIONES ---
+  const getPhaseDescription = () => {
+    if (phase === 'READY') return "Standby: Waiting to start the sequence.";
+    
+    if (phase === 'PAUSE_LISTEN_1') return "Up Next: Student listens to word 1 and repeats/spells.";
+    if (phase === 'PAUSE_LISTEN_2') return "Up Next: Student listens to word 2.";
+    if (phase === 'PAUSE_BEFORE_SCRAMBLE') return "Up Next: Students memorize scrambled word 1.";
+    if (phase === 'PAUSE_BEFORE_SCRAMBLE_2') return "Up Next: Students memorize scrambled word 2.";
+    if (phase === 'PAUSE_BEFORE_REVEAL') return "Up Next: Reveal correct word 1.";
+    if (phase === 'PAUSE_BEFORE_REVEAL_2') return "Up Next: Reveal correct word 2.";
+    if (phase === 'PAUSE_DICTATION_SENTENCE') return "Up Next: Dictate a full sentence. Students write.";
+    if (phase === 'PAUSE_DICTATION_SPELLING') return "Up Next: Dictate a word letter by letter. Students write.";
+    if (phase === 'PAUSE_BEFORE_SPEED') return "Up Next: Speed Reading Challenge.";
+
+    if (phase === 'LISTENING_1' || phase === 'LISTENING_2') return "Task: Student repeats, spells, repeats, and makes a sentence.";
+    if (phase === 'SCRAMBLED_VIEW') return "Task: Students memorize the scrambled word.";
+    if (phase === 'SCRAMBLED_WRITE') return "Task: Students write the unscrambled word on boards.";
+    if (phase.includes('BOARDS_UP')) return "Action: Students turn around and show their boards.";
+    if (phase === 'SCRAMBLED_REVEAL') return "Action: Displaying the correct word on screen.";
+    if (phase === 'DICTATION_SENTENCE') return "Task: Dictate a full sentence. Students write.";
+    if (phase === 'DICTATION_SPELLING') return "Task: Dictate a word letter by letter. Students write.";
+    if (phase === 'SPEED_READING') return "Task: Students read the sequence of words quickly.";
+    if (phase === 'STOP_RECALL') return "Task: Student spells the LAST word they read.";
+    
+    if (phase === 'CONTEST_CLOSING') return "The contest is completely finished.";
+    return "Follow the on-screen instructions.";
+  };
+
+  const getRoundDescription = () => {
+    if (round === 1) return "Listening Comprehension & Spelling";
+    if (round === 2) return "Scramble & Dictation (Group Activity)";
+    if (round === 3) return "Speed Reading & Recall";
+    return "";
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans overflow-hidden">
       <header className="bg-orange-500 text-white py-4 px-8 shadow-xl flex justify-between items-center z-50">
@@ -356,6 +383,7 @@ const AmericanThinkGame = () => {
         </div>
       </header>
 
+      {/* INFO BAR CON DESCRIPCIONES */}
       <div className="w-full flex justify-between items-center py-6 px-12 bg-white border-b shadow-sm">
         <div className="space-y-1">
           <p className="text-sm font-black text-orange-600 uppercase tracking-widest flex items-center gap-2">
@@ -365,6 +393,9 @@ const AmericanThinkGame = () => {
           <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tight">
             {phase.replace(/_/g, ' ')}
           </h2>
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-[0.15em] pt-1">
+            {getPhaseDescription()}
+          </p>
         </div>
         <div className={`px-10 py-4 rounded-[2rem] border-4 transition-all shadow-lg ${timeLeft > 0 && timeLeft <= 4 && !phase.includes('PAUSE') && !phase.includes('BOARDS_UP') && !phase.includes('REVEAL') && phase !== 'READY' ? 'bg-red-50 border-red-500 scale-110' : 'bg-slate-900 border-slate-700'}`}>
           <span className={`text-5xl font-mono font-black tabular-nums ${timeLeft > 0 && timeLeft <= 4 && !phase.includes('PAUSE') && !phase.includes('BOARDS_UP') && !phase.includes('REVEAL') && phase !== 'READY' ? 'text-red-600 animate-pulse' : 'text-white'}`}>
@@ -406,13 +437,18 @@ const AmericanThinkGame = () => {
                   {phase === 'READY' ? 'SYSTEM READY' : 'STANDBY'}
                 </h2>
                 
-                {(phase.includes('LISTEN') || phase.includes('DICTATION')) && <p className="text-amber-400 font-bold uppercase text-lg bg-amber-900/40 py-2 px-6 rounded-full border border-amber-500/30 inline-block mt-4 animate-pulse">"Turn Around & Listen to the Judge"</p>}
-                
-                {phase === 'PAUSE_BEFORE_SCRAMBLE' && <p className="text-emerald-400 font-bold uppercase text-lg bg-emerald-900/40 py-2 px-6 rounded-full border border-emerald-500/30 inline-block mt-4">"Look at the Screen! Word 1"</p>}
-                {phase === 'PAUSE_BEFORE_SCRAMBLE_2' && <p className="text-emerald-400 font-bold uppercase text-lg bg-emerald-900/40 py-2 px-6 rounded-full border border-emerald-500/30 inline-block mt-4">"Look at the Screen! Word 2"</p>}
-                {phase === 'PAUSE_BEFORE_REVEAL' && <p className="text-emerald-400 font-bold uppercase text-lg bg-emerald-900/40 py-2 px-6 rounded-full border border-emerald-500/30 inline-block mt-4">"Reveal Word 1"</p>}
-                {phase === 'PAUSE_BEFORE_REVEAL_2' && <p className="text-emerald-400 font-bold uppercase text-lg bg-emerald-900/40 py-2 px-6 rounded-full border border-emerald-500/30 inline-block mt-4">"Reveal Word 2"</p>}
-                {phase === 'PAUSE_BEFORE_SPEED' && <p className="text-emerald-400 font-bold uppercase text-lg bg-emerald-900/40 py-2 px-6 rounded-full border border-emerald-500/30 inline-block mt-4">"Prepare for Speed Challenge!"</p>}
+                <p className="text-amber-400 font-bold uppercase text-lg bg-amber-900/40 py-2 px-6 rounded-full border border-amber-500/30 inline-block mt-4">
+                  {phase === 'READY' && getRoundDescription()}
+                  {phase === 'PAUSE_LISTEN_1' && "Turn Around & Listen to Word 1"}
+                  {phase === 'PAUSE_LISTEN_2' && "Turn Around & Listen to Word 2"}
+                  {phase === 'PAUSE_BEFORE_SCRAMBLE' && "Look at the Screen! Word 1"}
+                  {phase === 'PAUSE_BEFORE_SCRAMBLE_2' && "Look at the Screen! Word 2"}
+                  {phase === 'PAUSE_BEFORE_REVEAL' && "Reveal Word 1"}
+                  {phase === 'PAUSE_BEFORE_REVEAL_2' && "Reveal Word 2"}
+                  {phase === 'PAUSE_DICTATION_SENTENCE' && "Turn Around for Dictation (Sentence)"}
+                  {phase === 'PAUSE_DICTATION_SPELLING' && "Turn Around for Dictation (Spelling)"}
+                  {phase === 'PAUSE_BEFORE_SPEED' && "Prepare for Speed Reading Challenge"}
+                </p>
                 
                 <br/>
                 <button onClick={startNextPhase} className="mt-8 bg-orange-500 hover:bg-orange-600 px-24 py-10 rounded-[2.5rem] font-black text-white text-3xl shadow-[0_15px_0_0_#c2410c] active:shadow-none active:translate-y-[15px] transition-all">

@@ -129,34 +129,34 @@ const KidsBoxGame = () => {
     };
   }, [isActive, timeLeft]);
 
-  // Evaluador de Tiempo Terminado
+  // Evaluador de Tiempo Terminado (ALARMA AL INSTANTE)
   useEffect(() => {
     if (isActive && timeLeft === 0) {
       setIsActive(false);
-      handleAutoTransition();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActive, timeLeft]);
+      
+      const shouldPlayAlarm = ['READ_SPELL', 'SPEED_IMAGES', 'SPEED_WORDS', 'MEMORY_SPEAK', 'PARENT_CHILD'].includes(phase);
 
-  // Efectos Visuales y Sonoros por Segundo (Alarmas y Speed Changes)
-  useEffect(() => {
-    if (isActive && timeLeft > 0) {
-      const isBoardWrite = ['PARENT_CHILD'].includes(phase);
-      const isSingleBeep = ['READ_SPELL', 'SPEED_IMAGES', 'SPEED_WORDS', 'MEMORY_SPEAK'].includes(phase);
-
-      if ((isBoardWrite && timeLeft <= 4) || (isSingleBeep && timeLeft === 1)) {
-        audioRefTimeOut.current.currentTime = 0; 
-        audioRefTimeOut.current.volume = 1.0;    
+      if (shouldPlayAlarm) {
+        audioRefTimeOut.current.currentTime = 0;
         audioRefTimeOut.current.play().catch(e => console.log("Audio Error:", e));
       }
 
+      handleAutoTransition();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isActive, timeLeft, phase]);
+
+  // Efectos Visuales por Segundo (Speed Changes)
+  useEffect(() => {
+    if (isActive && timeLeft > 0) {
+      // Cambio dinámico de imagen/palabra cada 2 segundos en las rondas de velocidad
       if (timeLeft % 2 === 0) {
         if (phase === 'SPEED_IMAGES') setDisplayImages(getImages(1));
         if (phase === 'SPEED_WORDS') setDisplayWords(getWords(1));
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeLeft]);
+  }, [timeLeft, phase, isActive]);
 
   // LA FUNCIÓN QUE CAMBIA DE IMAGEN O SUB-FASE AL ACABAR EL TIEMPO
   const handleAutoTransition = () => {

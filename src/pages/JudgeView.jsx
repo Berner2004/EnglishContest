@@ -5,19 +5,63 @@ import { io } from 'socket.io-client';
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://concursoengllish.onrender.com';
 const socket = io(API_BASE_URL);
 
-
 // Identificador del juez que inició sesión (AHORA USA sessionStorage)
 const judgeUsername = sessionStorage.getItem('username') || 'unknown_judge';
 
 const ROUND_INFO = {
+  "LITTLE STEPS": {
+    "1": { title: "Round 1: Listening, Spelling & Sentence", objective: "Evaluates ability to listen, spell correctly, and create a clear sentence (min. 6 words)." },
+    "2": { title: "Round 2: Board Challenge", objective: "Evaluates scrambled words resolution and accuracy in sentence and letter-by-letter dictation." },
+    "3": { title: "Round 3: Speed Reading & Recall", objective: "Evaluates reading speed, accuracy, and the ability to recall the last word to create a sentence." }
+  },
+  "POWER UP 1": {
+    "1": { title: "Round 1: Recognition & Sentence", objective: "Evaluates image recognition, spelling of 2 words, and sentence structuring (min. 5 words)." },
+    "2": { title: "Round 2: Board Challenge", objective: "Evaluates scrambled words and dictation accuracy (capitalization, spacing, punctuation)." },
+    "3": { title: "Round 3: Speed Reading", objective: "Evaluates speed reading fluency, rhythm, and pronunciation." }
+  },
   "POWER UP 3": {
     "1": { title: "Round 1: Reading & Auditory", objective: "Evaluates visual recognition, accurate pronunciation, spelling, and sentence structuring (min. 6 words)." },
     "2": { title: "Round 2: Board Challenge", objective: "Evaluates team spelling accuracy, strict use of capitalization, spacing, and punctuation in dictation." },
     "3": { title: "Round 3: Speed & Recall", objective: "Evaluates speed reading fluency and the ability to recall and spell the last word to form a valid sentence." }
+  },
+  "AMERICAN THINK STARTER": {
+    "1": { title: "Round 1: Listening, Spelling & Sentence", objective: "Evaluates ability to listen, spell correctly, and create a clear sentence (min. 6 words)." },
+    "2": { title: "Round 2: Board Challenge", objective: "Evaluates scrambled words resolution and accuracy in sentence and letter-by-letter dictation." },
+    "3": { title: "Round 3: Speed Reading & Recall", objective: "Evaluates reading speed, accuracy, and the ability to recall the last word to create a valid sentence." }
   }
 };
 
 const RUBRICS = {
+  "LITTLE STEPS": {
+    "1": [
+      { key: "word1", title: "Activity 1: Word 1 (Listen & Spell)", max: 2, desc: "2 pts: Says, spells, and repeats correctly. 1 pt: Minor error." },
+      { key: "word2", title: "Activity 2: Word 2 (Spell & Sentence)", max: 4, desc: "4 pts: Spells correctly and creates a clear sentence (min. 6 words). 3 pts: Minor error." }
+    ],
+    "2": [
+      { key: "scramble", title: "Activity A (Scrambled Words)", max: 3, desc: "3 pts: Both words are completely correct. 2 pts: One minor mistake." },
+      { key: "dictation", title: "Activity B (Sentence Dictation)", max: 5, desc: "5 pts: Completely correct (capital letters, spaces, punctuation). 4 pts: 1 minor mistake." },
+      { key: "letter", title: "Activity C (Letter-by-Letter)", max: 5, desc: "5 pts: Sentence completely correct (spelling, grammar, and word order)." }
+    ],
+    "3": [
+      { key: "speed", title: "Speed Reading + Recall + Sentence", max: 3, desc: "3 pts: Reads quickly, correctly recalls/spells the last word, and creates a clear sentence." }
+    ]
+  },
+  "POWER UP 1": {
+    "1": [
+      { key: "act1", title: "Activity 1 (Images)", max: 3, desc: "Correctly identifies 3 words with good pronunciation." },
+      { key: "act2", title: "Activity 2 (Spelling)", max: 3, desc: "Reads, spells, and repeats both words correctly." },
+      { key: "act3", title: "Activity 3 (Sentence)", max: 3, desc: "Forms a clear, complete sentence (min. 5 words)." }
+    ],
+    "2": [
+      { key: "actA1", title: "Part A (Scramble 1)", max: 3, desc: "First scrambled word is completely correct." },
+      { key: "actA2", title: "Part A (Scramble 2)", max: 3, desc: "Second scrambled word is completely correct." },
+      { key: "actB", title: "Part B (Sentence)", max: 5, desc: "Sentence Dictation: Everything correct (letters, caps, spaces, period)." },
+      { key: "actC", title: "Part C (Dictation)", max: 5, desc: "Letter-by-letter dictation is completely correct." }
+    ],
+    "3": [
+      { key: "speed", title: "Speed Reading", max: 3, desc: "3=Excellent, 2=Good, 1=Basic, 0=Low. Continuous rhythm and clear pronunciation." }
+    ]
+  },
   "POWER UP 3": {
     "1": [
       { key: "fase1", title: "Phase 1 (Reading)", max: 3, desc: "Reads the 3 words correctly with good pronunciation and fluency." },
@@ -33,13 +77,27 @@ const RUBRICS = {
       { key: "fase1", title: "Phase 1 (Speed Reading 10s)", max: 3, desc: "Reads words with a good rhythm, steady pace, and proper pronunciation." },
       { key: "fase2", title: "Phase 2 (Recall + Sentence 18s)", max: 3, desc: "Correctly spells the LAST word read and forms a valid sentence (min. 6 words)." }
     ]
+  },
+  "AMERICAN THINK STARTER": {
+    "1": [
+      { key: "word1", title: "Activity 1: Word 1 (Listen & Spell)", max: 2, desc: "2 pts: Says, spells, and repeats correctly. 1 pt: Minor error." },
+      { key: "word2", title: "Activity 2: Word 2 (Spell & Sentence)", max: 4, desc: "4 pts: Spells correctly and creates a clear sentence (min. 6 words). 3 pts: Minor error." }
+    ],
+    "2": [
+      { key: "scramble", title: "Activity A (Scrambled Words)", max: 3, desc: "3 pts: Both words are completely correct. 2 pts: One minor mistake." },
+      { key: "dictation", title: "Activity B (Sentence Dictation)", max: 5, desc: "5 pts: Completely correct (spelling and word order). 4 pts: 1 minor mistake." },
+      { key: "letter", title: "Activity C (Letter-by-Letter)", max: 5, desc: "5 pts: Completely correct (capital letters, spaces, punctuation). 4 pts: 1 minor mistake." }
+    ],
+    "3": [
+      { key: "speed", title: "Speed Reading + Recall + Sentence", max: 3, desc: "3 pts: Reads quickly, correctly recalls/spells the last word, and creates a clear sentence." }
+    ]
   }
 };
 
 const CATEGORIES = [
   { id: "ALL", name: "Global Ranking", icon: <Globe size={16} />, color: "bg-indigo-600", text: "text-indigo-600", hover: "hover:bg-indigo-50" },
   { id: "LITTLE STEPS", name: "Little Steps", icon: <Camera size={16} />, color: "bg-sky-500", text: "text-sky-500", hover: "hover:bg-sky-50" },
-  { id: "KID´S BOX", name: "Kid's Box", icon: <Brain size={16} />, color: "bg-emerald-500", text: "text-emerald-500", hover: "hover:bg-emerald-50" },
+  { id: "KIDS BOX", name: "Kid's Box", icon: <Brain size={16} />, color: "bg-emerald-500", text: "text-emerald-500", hover: "hover:bg-emerald-50" },
   { id: "POWER UP 1", name: "Power Up 1", icon: <Type size={16} />, color: "bg-violet-500", text: "text-violet-500", hover: "hover:bg-violet-50" },
   { id: "POWER UP 3", name: "Power Up 3", icon: <Zap size={16} />, color: "bg-rose-500", text: "text-rose-500", hover: "hover:bg-rose-50" },
   { id: "AMERICAN THINK STARTER", name: "American Think", icon: <Trophy size={16} />, color: "bg-orange-500", text: "text-orange-500", hover: "hover:bg-orange-50" }
@@ -84,7 +142,11 @@ const JudgesView = () => {
   }, []);
 
   useEffect(() => {
-    if (selectedCategory) fetchLiveScores(selectedCategory);
+    if (selectedCategory && selectedCategory !== "ALL") {
+      fetchLiveScores(selectedCategory);
+    } else if (selectedCategory === "ALL") {
+      fetchLiveScores("ALL");
+    }
 
     const handleRemoteUpdate = (payload) => {
       if (payload?.action === 'score_updated') fetchLiveScores(selectedCategory);
@@ -274,7 +336,7 @@ const JudgesView = () => {
             <div className="bg-white rounded-[1.5rem] shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[55vh]">
               <div className="bg-slate-50 p-3 border-b border-slate-100 flex flex-col gap-3">
                 <div className="flex items-center gap-2">
-                  <Users size={16} className={activeCategoryObj.text}/>
+                  <Users size={16} className={activeCategoryObj?.text}/>
                   <h3 className="font-black text-[11px] text-slate-700 uppercase tracking-widest">Participants</h3>
                 </div>
                 <div className="relative">
@@ -299,7 +361,7 @@ const JudgesView = () => {
                     const hasMyScores = p.scoresObj && p.scoresObj[judgeUsername]?.[`round_${selectedRound}`] && Object.keys(p.scoresObj[judgeUsername]?.[`round_${selectedRound}`]).length > 0;
                     
                     return (
-                      <button key={p._id} onClick={() => setSelectedParticipant(p)} className={`w-full text-left p-3 rounded-xl flex items-center justify-between transition-all ${isSelected ? `${activeCategoryObj.color} text-white shadow-md` : 'hover:bg-slate-50 bg-white'}`}>
+                      <button key={p._id} onClick={() => setSelectedParticipant(p)} className={`w-full text-left p-3 rounded-xl flex items-center justify-between transition-all ${isSelected ? `${activeCategoryObj?.color} text-white shadow-md` : 'hover:bg-slate-50 bg-white'}`}>
                         <div className="flex items-center gap-3">
                           <div className={`w-7 h-7 rounded-full flex items-center justify-center font-black text-[10px] ${isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
                             {p.order_number}
@@ -321,12 +383,12 @@ const JudgesView = () => {
           <div className="lg:w-2/4 mt-6 lg:mt-0">
             {!selectedParticipant ? (
               <div className="bg-white rounded-[2rem] border-2 border-dashed border-slate-200 h-[60vh] flex flex-col items-center justify-center text-slate-400">
-                <div className={`w-20 h-20 rounded-full ${activeCategoryObj.color} bg-opacity-10 flex items-center justify-center mb-4`}>{activeCategoryObj.icon}</div>
+                <div className={`w-20 h-20 rounded-full ${activeCategoryObj?.color} bg-opacity-10 flex items-center justify-center mb-4`}>{activeCategoryObj?.icon}</div>
                 <h2 className="text-xl font-black text-slate-600 uppercase tracking-widest">No Student Selected</h2>
               </div>
             ) : (
               <div className="space-y-4 relative">
-                <div className={`${activeCategoryObj.color} text-white p-5 rounded-[2rem] shadow-xl flex items-center justify-between`}>
+                <div className={`${activeCategoryObj?.color} text-white p-5 rounded-[2rem] shadow-xl flex items-center justify-between`}>
                   <div>
                     <span className="bg-white/20 px-3 py-1 rounded-full text-[9px] font-black tracking-widest uppercase">Round {selectedRound}</span>
                     <h2 className="text-2xl font-black tracking-tight mt-2 uppercase">{selectedParticipant.name}</h2>
@@ -344,32 +406,36 @@ const JudgesView = () => {
                     </div>
                   )}
 
-                  {activeRubrics.map((rubric) => {
-                    const selectedScore = localScores[rubric.key];
-                    const scoreOptions = Array.from({length: rubric.max + 1}, (_, i) => rubric.max - i);
+                  {activeRubrics.length > 0 ? (
+                    activeRubrics.map((rubric) => {
+                      const selectedScore = localScores[rubric.key];
+                      const scoreOptions = Array.from({length: rubric.max + 1}, (_, i) => rubric.max - i);
 
-                    return (
-                      <div key={rubric.key} className="space-y-2">
-                        <div>
-                          <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide">{rubric.title}</h3>
-                          <p className="text-[11px] text-slate-500 font-bold bg-slate-50 p-2 rounded-lg mt-1 border border-slate-100 uppercase tracking-wider">{rubric.desc}</p>
+                      return (
+                        <div key={rubric.key} className="space-y-2">
+                          <div>
+                            <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide">{rubric.title}</h3>
+                            <p className="text-[11px] text-slate-500 font-bold bg-slate-50 p-2 rounded-lg mt-1 border border-slate-100 uppercase tracking-wider">{rubric.desc}</p>
+                          </div>
+                          <div className="grid grid-cols-4 md:grid-cols-6 gap-2 pt-1">
+                            {scoreOptions.map(score => (
+                              <button
+                                key={score}
+                                onClick={() => handleScoreSelect(rubric.key, score)}
+                                className={`py-2.5 rounded-xl font-black text-lg transition-all border-2
+                                  ${selectedScore === score ? (score > 0 ? 'bg-emerald-500 border-emerald-600 text-white transform scale-105 shadow-md' : 'bg-rose-500 border-rose-600 text-white transform scale-105 shadow-md') 
+                                    : 'bg-slate-50 border-slate-200 text-slate-400 hover:bg-slate-100'}`}
+                              >
+                                {score}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                        <div className="grid grid-cols-4 md:grid-cols-6 gap-2 pt-1">
-                          {scoreOptions.map(score => (
-                            <button
-                              key={score}
-                              onClick={() => handleScoreSelect(rubric.key, score)}
-                              className={`py-2.5 rounded-xl font-black text-lg transition-all border-2
-                                ${selectedScore === score ? (score > 0 ? 'bg-emerald-500 border-emerald-600 text-white transform scale-105 shadow-md' : 'bg-rose-500 border-rose-600 text-white transform scale-105 shadow-md') 
-                                  : 'bg-slate-50 border-slate-200 text-slate-400 hover:bg-slate-100'}`}
-                            >
-                              {score}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })
+                  ) : (
+                    <p className="text-center text-slate-400 font-bold py-10">No rubrics defined for this round yet.</p>
+                  )}
                 </div>
 
                 {/* BARRA DE GUARDADO (ESTÁTICA, NO FIXED) */}

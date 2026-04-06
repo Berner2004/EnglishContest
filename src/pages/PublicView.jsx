@@ -210,23 +210,17 @@ const PublicView = () => {
       <audio ref={audioRefTimeUp} src="/sounds/time-up.mp3" preload="auto" />
 
       {/* HEADER */}
-      {/* HEADER */}
       <header className={`${theme.primary} text-white py-2 px-6 shadow-xl flex justify-between items-center z-50 shrink-0 transition-colors duration-500`}>
         
-        {/* CAMBIO 1: Reducimos gap-3 a gap-0 para quitar el espacio forzado */}
         <div className="flex items-center gap-0">
-          
           <img 
             src="/img/waiting_img/AmazonStar.png" 
             alt="Amazon Star" 
-            /* CAMBIO 2: Añadimos -mr-3 (margen derecho negativo) para acercar el texto */
             className="w-20 h-20 md:w-20 md:h-30 object-contain drop-shadow-sm -mr-3 scale-[1.80]" 
           />
-          
           <h1 className="text-xl md:text-2xl font-black uppercase italic tracking-tighter">
             Amazon English Academy
           </h1>
-          
         </div>
         
         <div className={`${theme.badgeBg} px-4 py-1 rounded-full text-[10px] md:text-xs font-black uppercase tracking-widest border ${theme.badgeBorder}`}>
@@ -289,16 +283,13 @@ const PublicView = () => {
           /* MARCO OSCURO PRINCIPAL PARA EL RESTO DE FASES */
           <div className="w-full h-full max-w-7xl bg-slate-900 rounded-[2rem] border-[12px] border-slate-800 flex flex-col items-center justify-center relative shadow-[0_20px_50px_-15px_rgba(0,0,0,0.6)] overflow-hidden">
 
-            {/* ENVOLTURA CLAVE PARA LA ANIMACIÓN DE SLIDE:
-                  Al usar key={phase}, React reconstruye este div cada vez que la fase cambia,
-                  activando automáticamente la animación 'slide-in-from-right-12' y 'fade-in' */}
             <div key={`${phase}-${activeWordIdx}-${activeImgIdx}`} className="w-full h-full flex flex-col items-center justify-center animate-in slide-in-from-right-12 fade-in duration-300">
 
               {/* READY Y PAUSAS (Con Animaciones y Mensajes de Ánimo) */}
               {(phase === 'READY' || phase.startsWith('PAUSE')) && (
                 <div className="text-center space-y-6 flex flex-col items-center w-full px-4">
 
-                  {/* IMPLEMENTACIÓN DEL LOGO CON BRILLO EN LUGAR DEL ICONO 'T' */}
+                  {/* IMPLEMENTACIÓN DEL LOGO CON BRILLO */}
                   <div className="flex items-center justify-center mx-auto relative mb-4 w-full animate-slow-pulse">
                     <div className="absolute inset-0 scale-[3] rounded-full blur-3xl bg-purple/5 opacity-60"></div>
                     <img
@@ -453,7 +444,7 @@ const PublicView = () => {
                       <img key={i} src={src} className={`${maxW} max-h-[40%] bg-white p-2 rounded-xl border-4 border-slate-700 shadow-lg object-contain`} alt="Memory Card" />
                     );
                   })}
-                  <div className="absolute bottom-10 bg-rose-600 text-white px-10 py-4 rounded-full font-black text-2xl uppercase animate-pulse shadow-2xl">Memorize Everything!</div>
+                  {/* Se ha eliminado el cartel "Memorize Everything" de la pizarra */}
                 </div>
               )}
 

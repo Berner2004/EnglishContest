@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { 
-  Play, Pause, RotateCcw, SkipForward, Home, Ear, Edit3, Zap, Trophy, Award, ChevronLeft, ChevronRight, Type, ArrowRight
+  Play, Pause, RotateCcw, SkipForward, Home, Ear, Edit3, Zap, Trophy, ChevronLeft, ChevronRight, Type, ArrowRight, AlertCircle, Award, Users
 } from 'lucide-react';
 import { io } from 'socket.io-client';
 
-// Conexión al servidor de WebSockets en Render
-const socket = io('https://concursoengllish.onrender.com');
+const socket = io(import.meta.env.VITE_API_URL || 'https://concursoengllish.onrender.com');
 
 const WORDS_POOL = [
   "kitchen", "living room", "bedroom", "garage", "bathroom", 
@@ -21,10 +20,44 @@ const WORDS_POOL = [
 ];
 
 const AmericanThinkGame = () => {
-  const { state } = useLocation();
+  const location = useLocation();
   const navigate = useNavigate();
-  const participants = state?.participants || [];
   
+  const [participants, setParticipants] = useState(() => {
+    if (location.state?.participants) {
+      sessionStorage.setItem('americanThinkParts', JSON.stringify(location.state.participants));
+      return location.state.participants;
+    }
+    const saved = sessionStorage.getItem('americanThinkParts');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [numberOfGroups, setNumberOfGroups] = useState(() => {
+    if (location.state?.numberOfGroups) {
+      sessionStorage.setItem('americanThinkGroups', location.state.numberOfGroups);
+      return location.state.numberOfGroups;
+    }
+    const saved = sessionStorage.getItem('americanThinkGroups');
+    return saved ? parseInt(saved) : 4;
+  });
+
+  if (!participants || participants.length === 0) {
+      return (
+          <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center space-y-6">
+              <AlertCircle size={80} className="text-rose-500 animate-pulse" />
+              <h1 className="text-4xl font-black uppercase tracking-widest text-center">No Active Session</h1>
+              <p className="text-slate-400 font-bold">Please start the game correctly from the Admin Dashboard.</p>
+              <button onClick={() => navigate('/admin')} className="mt-8 bg-orange-500 px-8 py-3 rounded-full font-black uppercase tracking-widest shadow-lg hover:scale-105 transition-all">Go to Admin</button>
+          </div>
+      );
+  }
+  
+  const chunkSize = Math.ceil(participants.length / numberOfGroups);
+  const groups = [];
+  for (let i = 0; i < participants.length; i += chunkSize) {
+      groups.push(participants.slice(i, i + chunkSize));
+  }
+
   const settings = { 
     listenTime1: 10,      
     listenTime2: 18,      
@@ -38,6 +71,7 @@ const AmericanThinkGame = () => {
   };
 
   const [currentChildIdx, setCurrentChildIdx] = useState(0);
+  const [currentGroupIdx, setCurrentGroupIdx] = useState(0); 
   const [round, setRound] = useState(1); 
   const [phase, setPhase] = useState('READY'); 
   const [timeLeft, setTimeLeft] = useState(0);
@@ -51,24 +85,29 @@ const AmericanThinkGame = () => {
   const currentChild = participants[currentChildIdx];
   const intervalRef = useRef(null);
   
-  const audioRefBoardsUp = useRef(new Audio('/audio/boards-up.mp3'));
-  const audioRefTimeOut = useRef(new Audio('/sounds/time.mp3'));
+  const audioRefBoardsUp = useRef(new Audio('/sounds/boards-up.mp3'));
+  const audioRefTimeOut = useRef(new Audio('/sounds/time-up.mp3'));
 
   useEffect(() => {
-    return () => {
-      socket.emit('clear_state');
-    };
+    return () => socket.emit('clear_state');
   }, []);
 
   useEffect(() => {
+    const participantLabel = round === 2 ? 'GROUP ACTIVITY' : currentChild?.order_number;
+    const activeGroupNumbers = round === 2 && groups[currentGroupIdx] 
+        ? groups[currentGroupIdx].map(p => p.order_number) 
+        : [];
+
     socket.emit('sync_state', {
-      game: 'AMERICAN_THINK',
-      round, phase, timeLeft, 
-      displayWords, originalWords, currentIndex,
-      participantNumber: currentChild?.order_number,
+      game: 'AMERICAN_THINK_STARTER',
+      round, phase, timeLeft, displayWords, originalWords, currentIndex,
+      participantNumber: participantLabel,
+      numberOfGroups: numberOfGroups, 
+      currentGroupIdx: currentGroupIdx,
+      activeGroupOrderNumbers: activeGroupNumbers, 
       triggerAudio: phase.includes('BOARDS_UP') && timeLeft === settings.boardsUpTime
     });
-  }, [round, phase, timeLeft, displayWords, originalWords, currentIndex, currentChild]);
+  }, [round, phase, timeLeft, displayWords, originalWords, currentIndex, currentChild, currentGroupIdx, numberOfGroups]);
 
   useEffect(() => {
     if (isActive && timeLeft > 0) {
@@ -77,18 +116,11 @@ const AmericanThinkGame = () => {
       }, 1000);
     } else if (timeLeft === 0 && isActive) {
       setIsActive(false); 
-      
-      const shouldPlayAlarm = [
-        'LISTENING_1', 'LISTENING_2', 
-        'SCRAMBLED_WRITE', 'DICTATION_SENTENCE', 'DICTATION_SPELLING',
-        'SPEED_READING', 'STOP_RECALL'
-      ].includes(phase);
-
+      const shouldPlayAlarm = ['LISTENING_1', 'LISTENING_2', 'SCRAMBLED_WRITE', 'DICTATION_SENTENCE', 'DICTATION_SPELLING', 'SPEED_READING', 'STOP_RECALL'].includes(phase);
       if (shouldPlayAlarm) {
         audioRefTimeOut.current.currentTime = 0;
         audioRefTimeOut.current.play().catch(e => console.log("Audio Error:", e));
       }
-
       handleAutoTransition(); 
     }
     return () => clearInterval(intervalRef.current);
@@ -119,16 +151,10 @@ const AmericanThinkGame = () => {
       }
     }
     else if (phase === 'BOARDS_UP_SCRAMBLE') {
-      setCurrentIndex(0); 
       setPhase('PAUSE_BEFORE_REVEAL');
     }
     else if (phase === 'SCRAMBLED_REVEAL') {
-      if (currentIndex === 0) { 
-        setCurrentIndex(1);
-        setPhase('PAUSE_BEFORE_REVEAL_2');
-      } else {
-        setPhase('PAUSE_DICTATION_SENTENCE');
-      }
+      setPhase('PAUSE_DICTATION_SENTENCE');
     }
     else if (phase === 'DICTATION_SENTENCE') {
       setPhase('BOARDS_UP_SENTENCE');
@@ -179,7 +205,7 @@ const AmericanThinkGame = () => {
       setTimeLeft(settings.scrambledView);
       setIsActive(true);
     }
-    else if (phase === 'PAUSE_BEFORE_REVEAL' || phase === 'PAUSE_BEFORE_REVEAL_2') {
+    else if (phase === 'PAUSE_BEFORE_REVEAL') {
       setPhase('SCRAMBLED_REVEAL');
     }
     else if (phase === 'PAUSE_DICTATION_SENTENCE') {
@@ -208,37 +234,55 @@ const AmericanThinkGame = () => {
     setIsActive(false);
     setUsedWords(new Set());
     setOriginalWords([]);
-    if (round === 2) {
-      setRound(3);
-      setCurrentChildIdx(0);
-      setPhase('READY');
-      return;
-    }
-    if (currentChildIdx < participants.length - 1) {
-      setCurrentChildIdx(prev => prev + 1);
-      setPhase('READY');
-    } else {
-      if (round < 3) {
-        setRound(prev => prev + 1);
-        setCurrentChildIdx(0);
-        setPhase('READY');
-      } else {
-        setPhase('CONTEST_CLOSING');
-      }
+    
+    if (round === 1) {
+        if (currentChildIdx < participants.length - 1) {
+            setCurrentChildIdx(prev => prev + 1);
+            setPhase('READY');
+        } else {
+            setRound(2);
+            setCurrentGroupIdx(0); 
+            setPhase('READY');
+        }
+    } else if (round === 2) {
+        if (currentGroupIdx < groups.length - 1) {
+            setCurrentGroupIdx(prev => prev + 1);
+            setPhase('READY');
+        } else {
+            setRound(3);
+            setCurrentChildIdx(0); 
+            setPhase('READY');
+        }
+    } else if (round === 3) {
+        if (currentChildIdx < participants.length - 1) {
+            setCurrentChildIdx(prev => prev + 1);
+            setPhase('READY');
+        } else {
+            setPhase('CONTEST_CLOSING');
+        }
     }
   };
 
   const goToPrevStudent = () => {
     setIsActive(false);
     setPhase('READY');
-    if (round === 2) {
-      setRound(1);
-      setCurrentChildIdx(participants.length - 1);
-    } else if (round > 1 && currentChildIdx === 0) {
-      setRound(prev => prev - 1);
-      setCurrentChildIdx(participants.length - 1);
-    } else if (currentChildIdx > 0) {
-      setCurrentChildIdx(prev => prev - 1);
+    
+    if (round === 1) {
+        if (currentChildIdx > 0) setCurrentChildIdx(prev => prev - 1);
+    } else if (round === 2) {
+        if (currentGroupIdx > 0) {
+            setCurrentGroupIdx(prev => prev - 1);
+        } else {
+            setRound(1);
+            setCurrentChildIdx(participants.length - 1);
+        }
+    } else if (round === 3) {
+        if (currentChildIdx > 0) {
+            setCurrentChildIdx(prev => prev - 1);
+        } else {
+            setRound(2);
+            setCurrentGroupIdx(groups.length - 1);
+        }
     }
   };
 
@@ -294,8 +338,8 @@ const AmericanThinkGame = () => {
     const words = getWords(2);
     setOriginalWords(words); 
     setDisplayWords(words.map(scrambleWord));
-    setPhase('PAUSE_BEFORE_SCRAMBLE');
     setCurrentIndex(0);
+    setPhase('PAUSE_BEFORE_SCRAMBLE');
   };
 
   const startRound3 = () => {
@@ -307,45 +351,28 @@ const AmericanThinkGame = () => {
     setIsActive(false);
     setTimeLeft(0);
     
-    if (phase === 'LISTENING_1' || phase === 'PAUSE_LISTEN_1') {
-      setPhase('PAUSE_LISTEN_1');
-    } 
-    else if (phase === 'LISTENING_2' || phase === 'PAUSE_LISTEN_2') {
-      setPhase('PAUSE_LISTEN_2');
-    } 
-    else if (phase === 'SCRAMBLED_VIEW' || phase === 'SCRAMBLED_WRITE' || phase === 'BOARDS_UP_SCRAMBLE') {
-      if (currentIndex === 0) setPhase('PAUSE_BEFORE_SCRAMBLE');
-      else setPhase('PAUSE_BEFORE_SCRAMBLE_2');
-    } 
-    else if (phase === 'SCRAMBLED_REVEAL' || phase === 'PAUSE_BEFORE_REVEAL' || phase === 'PAUSE_BEFORE_REVEAL_2') {
-      if (currentIndex === 0) setPhase('PAUSE_BEFORE_REVEAL'); 
-      else setPhase('PAUSE_BEFORE_REVEAL_2');
-    } 
-    else if (phase === 'DICTATION_SENTENCE' || phase === 'PAUSE_DICTATION_SENTENCE' || phase === 'BOARDS_UP_SENTENCE') {
-      setPhase('PAUSE_DICTATION_SENTENCE');
-    } 
-    else if (phase === 'DICTATION_SPELLING' || phase === 'PAUSE_DICTATION_SPELLING' || phase === 'BOARDS_UP_SPELLING') {
-      setPhase('PAUSE_DICTATION_SPELLING');
-    } 
-    else if (phase === 'SPEED_READING' || phase === 'STOP_RECALL' || phase === 'PAUSE_BEFORE_SPEED') {
-      setPhase('PAUSE_BEFORE_SPEED');
-    } 
-    else {
-      setCurrentIndex(0);
-      setPhase('READY'); 
+    if (phase === 'LISTENING_1' || phase === 'PAUSE_LISTEN_1') setPhase('PAUSE_LISTEN_1');
+    else if (phase === 'LISTENING_2' || phase === 'PAUSE_LISTEN_2') setPhase('PAUSE_LISTEN_2');
+    else if (phase === 'SCRAMBLED_VIEW' || phase === 'SCRAMBLED_WRITE' || phase === 'BOARDS_UP_SCRAMBLE' || phase === 'PAUSE_BEFORE_SCRAMBLE') {
+        setCurrentIndex(0); setPhase('PAUSE_BEFORE_SCRAMBLE');
     }
+    else if (phase === 'PAUSE_BEFORE_SCRAMBLE_2') {
+        setCurrentIndex(1); setPhase('PAUSE_BEFORE_SCRAMBLE_2');
+    }
+    else if (phase === 'SCRAMBLED_REVEAL' || phase === 'PAUSE_BEFORE_REVEAL') setPhase('PAUSE_BEFORE_REVEAL');
+    else if (phase === 'DICTATION_SENTENCE' || phase === 'PAUSE_DICTATION_SENTENCE' || phase === 'BOARDS_UP_SENTENCE') setPhase('PAUSE_DICTATION_SENTENCE');
+    else if (phase === 'DICTATION_SPELLING' || phase === 'PAUSE_DICTATION_SPELLING' || phase === 'BOARDS_UP_SPELLING') setPhase('PAUSE_DICTATION_SPELLING');
+    else if (phase === 'SPEED_READING' || phase === 'STOP_RECALL' || phase === 'PAUSE_BEFORE_SPEED') setPhase('PAUSE_BEFORE_SPEED');
+    else { setCurrentIndex(0); setPhase('READY'); }
   };
 
-  // --- FUNCIONES AÑADIDAS PARA LAS DESCRIPCIONES ---
   const getPhaseDescription = () => {
     if (phase === 'READY') return "Standby: Waiting to start the sequence.";
-    
     if (phase === 'PAUSE_LISTEN_1') return "Up Next: Student listens to word 1 and repeats/spells.";
     if (phase === 'PAUSE_LISTEN_2') return "Up Next: Student listens to word 2.";
     if (phase === 'PAUSE_BEFORE_SCRAMBLE') return "Up Next: Students memorize scrambled word 1.";
     if (phase === 'PAUSE_BEFORE_SCRAMBLE_2') return "Up Next: Students memorize scrambled word 2.";
-    if (phase === 'PAUSE_BEFORE_REVEAL') return "Up Next: Reveal correct word 1.";
-    if (phase === 'PAUSE_BEFORE_REVEAL_2') return "Up Next: Reveal correct word 2.";
+    if (phase === 'PAUSE_BEFORE_REVEAL') return "Up Next: Reveal BOTH correct words.";
     if (phase === 'PAUSE_DICTATION_SENTENCE') return "Up Next: Dictate a full sentence. Students write.";
     if (phase === 'PAUSE_DICTATION_SPELLING') return "Up Next: Dictate a word letter by letter. Students write.";
     if (phase === 'PAUSE_BEFORE_SPEED') return "Up Next: Speed Reading Challenge.";
@@ -354,7 +381,7 @@ const AmericanThinkGame = () => {
     if (phase === 'SCRAMBLED_VIEW') return "Task: Students memorize the scrambled word.";
     if (phase === 'SCRAMBLED_WRITE') return "Task: Students write the unscrambled word on boards.";
     if (phase.includes('BOARDS_UP')) return "Action: Students turn around and show their boards.";
-    if (phase === 'SCRAMBLED_REVEAL') return "Action: Displaying the correct word on screen.";
+    if (phase === 'SCRAMBLED_REVEAL') return "Action: Displaying BOTH correct words on screen.";
     if (phase === 'DICTATION_SENTENCE') return "Task: Dictate a full sentence. Students write.";
     if (phase === 'DICTATION_SPELLING') return "Task: Dictate a word letter by letter. Students write.";
     if (phase === 'SPEED_READING') return "Task: Students read the sequence of words quickly.";
@@ -383,12 +410,11 @@ const AmericanThinkGame = () => {
         </div>
       </header>
 
-      {/* INFO BAR CON DESCRIPCIONES */}
       <div className="w-full flex justify-between items-center py-6 px-12 bg-white border-b shadow-sm">
         <div className="space-y-1">
           <p className="text-sm font-black text-orange-600 uppercase tracking-widest flex items-center gap-2">
             <span className="w-2 h-2 bg-orange-600 rounded-full animate-pulse"></span>
-            Round {round} - {round === 2 ? "Group Activity" : `Participant #${currentChild?.order_number || "..."}`}
+            Round {round} - {round === 2 ? `Group ${currentGroupIdx + 1} (${groups[currentGroupIdx]?.length || 0} Students)` : `Participant #${currentChild?.order_number || "..."}`}
           </p>
           <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tight">
             {phase.replace(/_/g, ' ')}
@@ -431,20 +457,19 @@ const AmericanThinkGame = () => {
             {(phase === 'READY' || phase.startsWith('PAUSE')) && (
               <div className="text-center animate-in zoom-in duration-300">
                 <div className="w-24 h-24 bg-orange-500/10 text-orange-500 rounded-full flex items-center justify-center mx-auto shadow-lg mb-6">
-                  {round === 1 ? <Ear size={48} /> : round === 2 ? <Edit3 size={48} /> : <Zap size={48} />}
+                  {round === 1 ? <Ear size={48} /> : round === 2 ? <Users size={48} /> : <Zap size={48} />}
                 </div>
                 <h2 className="text-5xl font-black text-white uppercase tracking-widest italic drop-shadow-lg">
                   {phase === 'READY' ? 'SYSTEM READY' : 'STANDBY'}
                 </h2>
                 
                 <p className="text-amber-400 font-bold uppercase text-lg bg-amber-900/40 py-2 px-6 rounded-full border border-amber-500/30 inline-block mt-4">
-                  {phase === 'READY' && getRoundDescription()}
+                  {phase === 'READY' && (round === 1 ? "Listening & Spelling" : round === 2 ? "Board Challenge" : "Speed Reading")}
                   {phase === 'PAUSE_LISTEN_1' && "Turn Around & Listen to Word 1"}
                   {phase === 'PAUSE_LISTEN_2' && "Turn Around & Listen to Word 2"}
                   {phase === 'PAUSE_BEFORE_SCRAMBLE' && "Look at the Screen! Word 1"}
                   {phase === 'PAUSE_BEFORE_SCRAMBLE_2' && "Look at the Screen! Word 2"}
-                  {phase === 'PAUSE_BEFORE_REVEAL' && "Reveal Word 1"}
-                  {phase === 'PAUSE_BEFORE_REVEAL_2' && "Reveal Word 2"}
+                  {phase === 'PAUSE_BEFORE_REVEAL' && "Reveal BOTH Words"}
                   {phase === 'PAUSE_DICTATION_SENTENCE' && "Turn Around for Dictation (Sentence)"}
                   {phase === 'PAUSE_DICTATION_SPELLING' && "Turn Around for Dictation (Spelling)"}
                   {phase === 'PAUSE_BEFORE_SPEED' && "Prepare for Speed Reading Challenge"}
@@ -452,7 +477,7 @@ const AmericanThinkGame = () => {
                 
                 <br/>
                 <button onClick={startNextPhase} className="mt-8 bg-orange-500 hover:bg-orange-600 px-24 py-10 rounded-[2.5rem] font-black text-white text-3xl shadow-[0_15px_0_0_#c2410c] active:shadow-none active:translate-y-[15px] transition-all">
-                  {phase === 'READY' ? `START ${round === 2 ? 'GROUP ACTIVITY' : 'TURN'}` : 'CONTINUE'}
+                  {phase === 'READY' ? `START ${round === 2 ? `GROUP ${currentGroupIdx + 1}` : 'TURN'}` : 'CONTINUE'}
                 </button>
               </div>
             )}
@@ -490,9 +515,15 @@ const AmericanThinkGame = () => {
             )}
 
             {phase === 'SCRAMBLED_REVEAL' && originalWords?.length > 0 && (
-              <div className="bg-emerald-500 px-32 py-20 rounded-[4rem] border-[16px] border-white shadow-2xl animate-in zoom-in">
-                <p className="text-emerald-100 font-black text-3xl tracking-[0.3em] uppercase mb-6 text-center">CORRECT WORD</p>
-                <h1 className="text-9xl font-black text-white tracking-widest text-center lowercase">{originalWords[currentIndex]}</h1>
+              <div className="bg-emerald-500 w-[80%] py-12 rounded-[4rem] border-[16px] border-white shadow-2xl animate-in zoom-in flex flex-col items-center justify-center gap-6">
+                <p className="text-emerald-100 font-black text-3xl tracking-[0.3em] uppercase text-center">CORRECT WORDS</p>
+                <div className="flex flex-col gap-4">
+                  {originalWords.map((word, idx) => (
+                    <h1 key={idx} className="text-7xl font-black text-white tracking-widest text-center lowercase">
+                      {word}
+                    </h1>
+                  ))}
+                </div>
               </div>
             )}
 

@@ -118,6 +118,7 @@ const PublicView = () => {
           primary: game === 'POWER_UP_3' ? 'bg-rose-600' : 'bg-violet-700', headerText: 'text-white', badgeBg: 'bg-white/20', badgeBorder: 'border-white/30', textMain: game === 'POWER_UP_3' ? 'text-rose-600' : 'text-violet-600', textLight: game === 'POWER_UP_3' ? 'text-rose-400' : 'text-violet-400', bgLight: game === 'POWER_UP_3' ? 'bg-rose-900/40' : 'bg-violet-900/40', borderLight: game === 'POWER_UP_3' ? 'border-rose-500/30' : 'border-violet-500/30', iconColor: 'text-white'
         };
       case 'AMERICAN_THINK':
+      case 'AMERICAN_THINK_STARTER':
         return {
           primary: 'bg-orange-500', headerText: 'text-orange-100', badgeBg: 'bg-orange-400/30', badgeBorder: 'border-orange-300/30', textMain: 'text-orange-600', textLight: 'text-orange-400', bgLight: 'bg-orange-900/30', borderLight: 'border-orange-500/30', iconColor: 'text-orange-500'
         };
@@ -156,7 +157,7 @@ const PublicView = () => {
       if (round === 2) return "Skills: Scramble & Dictation Precision";
       if (round === 3) return "Skills: Speed Reading & Memory Recall";
     }
-    if (game === 'AMERICAN_THINK') {
+    if (game.includes('AMERICAN_THINK')) {
       if (round === 1) return "Skills: Listening Comprehension & Spelling";
       if (round === 2) return "Skills: Word Unscrambling & Sentence Dictation";
       if (round === 3) return "Skills: Speed Reading & Memory Recall";
@@ -189,13 +190,8 @@ const PublicView = () => {
 
   const getParticipantText = () => {
     if (game === 'GRAND_FINAL') return `GRAND FINALIST #${participantNumber || "..."}`;
-    if (game === 'LITTLE_STEPS' && round === 3) return "Group Activity";
-    if (game === 'KIDS_BOX' && round === 3) return "Group Activity";
-    if (game === 'POWER_UP_1' && round === 2) return "Group Activity";
-    if (game === 'POWER_UP_3' && round === 2) return "Group Activity";
-    if (game === 'AMERICAN_THINK') {
-      if (round === 2) return "Group Activity";
-      if (round === 4) return `TOP 5 FINALIST #${participantNumber || "..."}`;
+    if (participantNumber === 'GROUP ACTIVITY') {
+       return `GROUP ACTIVITY`; 
     }
     return `Participant #${participantNumber || "..."}`;
   };
@@ -444,7 +440,6 @@ const PublicView = () => {
                       <img key={i} src={src} className={`${maxW} max-h-[40%] bg-white p-2 rounded-xl border-4 border-slate-700 shadow-lg object-contain`} alt="Memory Card" />
                     );
                   })}
-                  {/* Se ha eliminado el cartel "Memorize Everything" de la pizarra */}
                 </div>
               )}
 
@@ -468,23 +463,45 @@ const PublicView = () => {
                 </div>
               )}
 
-              {/* SCRAMBLE VIEW */}
+              {/* SCRAMBLE VIEW (MUESTRA AMBAS O UNA DEPENDIENDO LA FASE) */}
               {['SCRAMBLED', 'SCRAMBLED_VIEW'].includes(phase) && displayWords?.length > 0 && (
-                <div className="text-center">
-                  <p className={`${theme.textLight} font-black text-2xl tracking-[0.4em] mb-6 animate-pulse ${theme.bgLight} py-2 px-6 rounded-full border ${theme.borderLight} inline-block`}>
+                <div className="flex flex-col items-center justify-center h-full w-full gap-4 md:gap-6 px-4">
+                  <p className={`${theme.textLight} font-black text-xl md:text-2xl tracking-[0.4em] animate-pulse ${theme.bgLight} py-2 px-6 rounded-full border ${theme.borderLight} inline-block mb-2 shrink-0`}>
                     MEMORIZE SCRAMBLE!
                   </p>
-                  <h1 key={`scramble-${activeWordIdx}`} className="text-[10vw] font-black text-white tracking-[0.4em] drop-shadow-2xl leading-none animate-in slide-in-from-right-8 fade-in duration-300">
-                    {formatWord(displayWords[activeWordIdx])}
-                  </h1>
+                  <div className="flex flex-col items-center justify-center gap-4 md:gap-8 w-full flex-1 min-h-0 pb-10">
+                    {/* Renderiza las dos palabras si estamos en American Think Round 2, si no la activa */}
+                    {(game.includes('AMERICAN_THINK') && round === 2) 
+                      ? displayWords.map((word, idx) => (
+                          <h1 key={`scramble-${idx}`} className="text-5xl md:text-7xl lg:text-[7vw] leading-none font-black text-white tracking-[0.3em] drop-shadow-[0_0_20px_rgba(255,255,255,0.2)] text-center lowercase animate-in slide-in-from-right-8 fade-in duration-300">
+                            {formatWord(word)}
+                          </h1>
+                        ))
+                      : (
+                          <h1 key={`scramble-${activeWordIdx}`} className="text-[10vw] leading-none font-black text-white tracking-[0.4em] drop-shadow-[0_0_20px_rgba(255,255,255,0.2)] text-center lowercase animate-in slide-in-from-right-8 fade-in duration-300">
+                            {formatWord(displayWords[activeWordIdx])}
+                          </h1>
+                        )
+                    }
+                  </div>
                 </div>
               )}
 
-              {/* SCRAMBLE REVEAL */}
+              {/* SCRAMBLE REVEAL (TEXTO CENTRADO, SIN RECUADRO VERDE) */}
               {phase === 'SCRAMBLED_REVEAL' && originalWords?.length > 0 && (
-                <div className="bg-emerald-500 px-20 py-12 rounded-[3rem] border-[12px] border-white shadow-[0_15px_40px_rgba(16,185,129,0.5)] flex flex-col items-center">
-                  <p className="text-emerald-100 font-black text-2xl tracking-[0.3em] uppercase mb-4 bg-emerald-600/50 py-2 px-6 rounded-full">CORRECT WORD</p>
-                  <h1 className="text-8xl font-black text-white tracking-widest">{formatWord(originalWords[activeWordIdx])}</h1>
+                <div className="flex flex-col items-center justify-center h-full w-full gap-6 md:gap-10 animate-in zoom-in duration-500 px-4">
+                  <div className="bg-emerald-500/20 px-8 py-2 md:py-3 rounded-full border border-emerald-500/30 shrink-0">
+                    <p className="text-emerald-400 font-black text-xl md:text-2xl lg:text-3xl tracking-[0.4em] uppercase text-center shadow-sm">
+                      {originalWords.length > 1 ? 'CORRECT WORDS' : 'CORRECT WORD'}
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-center justify-center gap-6 md:gap-10 w-full flex-1 min-h-0 pb-10">
+                    {originalWords.map((word, idx) => (
+                      <h1 key={idx} className="text-6xl md:text-8xl lg:text-[7vw] leading-none font-black text-white tracking-[0.1em] text-center lowercase drop-shadow-[0_0_30px_rgba(16,185,129,0.5)]">
+                        {formatWord(word)}
+                      </h1>
+                    ))}
+                  </div>
                 </div>
               )}
 

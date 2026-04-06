@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Users, ChevronRight, CheckCircle2, AlertCircle, Save, BookOpen, Brain, Zap, Trophy, Type, Info, BarChart3, Camera, Globe, Search } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Users, ChevronRight, CheckCircle2, Save, BookOpen, Brain, Zap, Trophy, Type, Info, BarChart3, Camera, Globe, Search, Mic, BellRing, PlayCircle, X } from 'lucide-react';
 import { io } from 'socket.io-client';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://concursoengllish.onrender.com';
 const socket = io(API_BASE_URL);
 
-// Identificador del juez que inició sesión (AHORA USA sessionStorage)
+// Identificador del juez que inició sesión
 const judgeUsername = sessionStorage.getItem('username') || 'unknown_judge';
 
 const ROUND_INFO = {
@@ -26,7 +26,7 @@ const ROUND_INFO = {
   },
   "AMERICAN THINK STARTER": {
     "1": { title: "Round 1: Listening, Spelling & Sentence", objective: "Evaluates ability to listen, spell correctly, and create a clear sentence (min. 6 words)." },
-    "2": { title: "Round 2: Board Challenge", objective: "Evaluates scrambled words resolution and accuracy in sentence and letter-by-letter dictation." },
+    "2": { title: "Round 2: Board Challenge (GROUP ACTIVITY)", objective: "Evaluates scrambled words resolution and accuracy in sentence and letter-by-letter dictation." },
     "3": { title: "Round 3: Speed Reading & Recall", objective: "Evaluates reading speed, accuracy, and the ability to recall the last word to create a valid sentence." }
   }
 };
@@ -111,6 +111,12 @@ const JudgesView = () => {
   const [localScores, setLocalScores] = useState({});
   const [saveStatus, setSaveStatus] = useState("idle");
   const [searchTerm, setSearchTerm] = useState("");
+  
+  // ESTADOS PARA EL JUEGO EN VIVO Y ALERTA EMERGENTE
+  const [liveGameState, setLiveGameState] = useState(null);
+  const [gameAlert, setGameAlert] = useState(null);
+  const [pendingSelection, setPendingSelection] = useState(null); 
+  const lastAlertedContext = useRef("");
 
   const activeCategoryObj = CATEGORIES.find(c => c.id === selectedCategory);
 
@@ -142,28 +148,68 @@ const JudgesView = () => {
   }, []);
 
   useEffect(() => {
-    if (selectedCategory && selectedCategory !== "ALL") {
-      fetchLiveScores(selectedCategory);
-    } else if (selectedCategory === "ALL") {
-      fetchLiveScores("ALL");
-    }
+    if (selectedCategory && selectedCategory !== "ALL") fetchLiveScores(selectedCategory);
+    else if (selectedCategory === "ALL") fetchLiveScores("ALL");
 
     const handleRemoteUpdate = (payload) => {
-      if (payload?.action === 'score_updated') fetchLiveScores(selectedCategory);
+      if (payload?.action === 'score_updated') {
+        fetchLiveScores(selectedCategory);
+      } else if (payload && payload.game) {
+        const normalizedCategory = payload.game.replace(/_/g, ' ');
+        const contextKey = `${normalizedCategory}-${payload.round}-${payload.participantNumber || 'GROUP'}-${payload.currentGroupIdx || 0}`;
+        setLiveGameState({ ...payload, normalizedCategory, contextKey });
+      }
     };
 
     socket.on('sync_state', handleRemoteUpdate);
     socket.on('score_updated', () => fetchLiveScores(selectedCategory));
+    socket.on('clear_state', () => setLiveGameState(null));
 
     return () => {
       socket.off('sync_state', handleRemoteUpdate);
       socket.off('score_updated');
+      socket.off('clear_state');
     };
   }, [selectedCategory, fetchLiveScores]);
 
+  // LÓGICA INTELIGENTE DE ALERTA: Solo aparece si NO estás en la categoría y ronda actuales
+  useEffect(() => {
+    if (liveGameState && liveGameState.contextKey !== lastAlertedContext.current && liveGameState.phase !== 'READY') {
+        lastAlertedContext.current = liveGameState.contextKey;
+
+        // Verificamos si el juez ya está en la categoría y ronda correctas
+        const isAlreadyViewing = 
+            selectedCategory === liveGameState.normalizedCategory &&
+            selectedRound === liveGameState.round.toString();
+
+        // Si NO está en el juego, le mostramos el popup
+        if (!isAlreadyViewing) {
+            setGameAlert({
+                category: liveGameState.normalizedCategory,
+                round: liveGameState.round,
+                participantNumber: liveGameState.participantNumber || 'GROUP ACTIVITY'
+            });
+        }
+    }
+  }, [liveGameState, selectedCategory, selectedRound]);
+
+  // AUTO-SELECCIONAR AL ACEPTAR ALERTA
+  useEffect(() => {
+      if (pendingSelection && participants.length > 0) {
+          if (pendingSelection === 'GROUP ACTIVITY') {
+             setPendingSelection(null);
+          } else {
+             const p = participants.find(p => p.order_number === pendingSelection);
+             if (p) {
+                 setSelectedParticipant(p);
+                 setPendingSelection(null);
+             }
+          }
+      }
+  }, [participants, pendingSelection]);
+
   useEffect(() => {
     if (selectedParticipant) {
-      // Cargamos únicamente los scores que este juez específico ha puesto
       const mySavedScores = selectedParticipant.scoresObj?.[judgeUsername]?.[`round_${selectedRound}`] || {};
       setLocalScores(mySavedScores);
     } else {
@@ -191,7 +237,7 @@ const JudgesView = () => {
             round_number: `round_${selectedRound}`,
             criteria_key: criteriaKey,
             score: score,
-            judge_username: judgeUsername // Identificador único de este juez
+            judge_username: judgeUsername
           })
         });
       });
@@ -202,12 +248,10 @@ const JudgesView = () => {
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2500);
     } catch (error) {
-      console.error("Error saving scores:", error);
       setSaveStatus("error");
     }
   };
 
-  // SUMA GLOBAL (Combina los puntos de TODOS los jueces)
   const calculateParticipantRoundTotalGlobal = (scoresObj, roundNum) => {
     if (!scoresObj) return 0;
     let total = 0;
@@ -222,25 +266,111 @@ const JudgesView = () => {
     return [1, 2, 3].reduce((acc, r) => acc + calculateParticipantRoundTotalGlobal(scoresObj, r), 0);
   };
 
-  // Filtro de participantes
   const filteredParticipants = participants.filter(p => 
     p.order_number.toString().includes(searchTerm) || 
     p.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const leaderboard = [...participants]
-    .filter(p => calculateGrandTotalAllJudges(p.scoresObj) > 0)
-    .sort((a, b) => calculateGrandTotalAllJudges(b.scoresObj) - calculateGrandTotalAllJudges(a.scoresObj))
-    .slice(0, 10);
-
+  const leaderboard = [...participants].filter(p => calculateGrandTotalAllJudges(p.scoresObj) > 0).sort((a, b) => calculateGrandTotalAllJudges(b.scoresObj) - calculateGrandTotalAllJudges(a.scoresObj)).slice(0, 10);
   const activeRubrics = RUBRICS[selectedCategory]?.[selectedRound] || [];
   const activeRoundInfo = ROUND_INFO[selectedCategory]?.[selectedRound];
   const allCriteriaScored = activeRubrics.length > 0 && activeRubrics.every(r => localScores[r.key] !== undefined);
 
+  // =====================================================================
+  // LÓGICA DE GRUPOS MATEMÁTICA
+  // =====================================================================
+  const normalizedLiveGameCategory = liveGameState?.normalizedCategory;
+  const isCorrectLiveCategory = normalizedLiveGameCategory === selectedCategory;
+  
+  const currentCategoryParticipants = participants.filter(p => p.category === selectedCategory).sort((a, b) => a.order_number - b.order_number);
+  const dynamicNumGroups = liveGameState?.numberOfGroups || 4; 
+  const chunkSize = Math.ceil(currentCategoryParticipants.length / dynamicNumGroups);
+
+  const getAmericanThinkGroup = (participantId) => {
+    const index = currentCategoryParticipants.findIndex(p => p._id === participantId);
+    if (index === -1) return -1;
+    return Math.floor(index / chunkSize); // Retorna 0 para Grupo 1, 1 para Grupo 2, etc.
+  };
+
+  const handleAcceptAlert = () => {
+    setSelectedCategory(gameAlert.category);
+    setSelectedRound(gameAlert.round.toString());
+    setSearchTerm('');
+    setPendingSelection(gameAlert.participantNumber); 
+    setGameAlert(null);
+  };
+
+  // Función de renderizado para los botones de participantes individuales
+  const renderParticipantButton = (p) => {
+    const isSelected = selectedParticipant?._id === p._id;
+    const hasMyScores = p.scoresObj && p.scoresObj[judgeUsername]?.[`round_${selectedRound}`] && Object.keys(p.scoresObj[judgeUsername]?.[`round_${selectedRound}`]).length > 0;
+    
+    const isAmericanThinkRound2 = selectedCategory === "AMERICAN THINK STARTER" && selectedRound === "2";
+    const groupIdx = isAmericanThinkRound2 ? getAmericanThinkGroup(p._id) : null;
+    
+    // Iluminar si está en el stage (ya sea él individualmente o su grupo entero)
+    const isLiveOnStage = isCorrectLiveCategory && liveGameState?.round?.toString() === selectedRound && (
+        (!isAmericanThinkRound2 && liveGameState?.participantNumber === p.order_number) ||
+        (isAmericanThinkRound2 && liveGameState?.currentGroupIdx === groupIdx) 
+    );
+    
+    return (
+      <button key={p._id} onClick={() => setSelectedParticipant(p)} className={`w-full text-left p-3 rounded-xl flex items-center justify-between transition-all border-2 mb-1 ${isSelected ? `${activeCategoryObj?.color} text-white shadow-md border-transparent` : isLiveOnStage ? 'bg-rose-50 border-rose-300 shadow-sm' : 'hover:bg-slate-50 bg-white border-transparent'}`}>
+        <div className="flex items-center gap-3">
+          <div className={`w-7 h-7 rounded-full flex items-center justify-center font-black text-[10px] ${isSelected ? 'bg-white/20 text-white' : isLiveOnStage ? 'bg-rose-500 text-white shadow-sm animate-pulse' : 'bg-slate-100 text-slate-500'}`}>
+            {p.order_number}
+          </div>
+          <div>
+            <span className={`font-black text-[11px] block leading-none uppercase tracking-wide ${isSelected ? 'text-white' : 'text-slate-700'}`}>{p.name}</span>
+            {isLiveOnStage && !isSelected ? (
+              <span className="text-[8px] font-black text-rose-500 uppercase tracking-widest mt-1 flex items-center gap-1 animate-pulse"><Mic size={8}/> ON STAGE</span>
+            ) : (
+              hasMyScores && !isSelected && <span className="text-[8px] font-bold text-emerald-500 uppercase tracking-widest mt-1 block">✓ Graded</span>
+            )}
+          </div>
+        </div>
+      </button>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-slate-100 font-sans text-slate-900 pb-24">
       
-      {/* HEADER PRINCIPAL EXTRA FINO Y STICKY (TE ACOMPAÑA AL SCROLLEAR) */}
+      {/* ALERTA EMERGENTE (POP-UP) */}
+      {gameAlert && (
+        <div className="fixed inset-0 z-[100] flex items-start justify-center p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-300">
+            <div className="bg-white rounded-3xl shadow-2xl border-[6px] border-amber-400 w-full max-w-lg overflow-hidden animate-in slide-in-from-top-10 duration-500">
+                <div className="bg-slate-900 px-6 py-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <BellRing className="text-amber-400 animate-bounce" size={24} />
+                        <h3 className="text-white font-black uppercase tracking-widest text-lg">Stage Update</h3>
+                    </div>
+                    <button onClick={() => setGameAlert(null)} className="text-slate-400 hover:text-white"><X size={24}/></button>
+                </div>
+                <div className="p-8 text-center space-y-4">
+                    <p className="text-slate-500 font-bold uppercase tracking-widest text-xs">A new session has started</p>
+                    <h2 className="text-3xl font-black text-indigo-600 uppercase tracking-tighter">{gameAlert.category}</h2>
+                    <div className="flex flex-wrap items-center justify-center gap-3 py-2">
+                        <span className="bg-slate-100 text-slate-600 px-4 py-1.5 rounded-full font-black text-sm uppercase tracking-widest border border-slate-200">
+                            Round {gameAlert.round}
+                        </span>
+                        <span className="bg-amber-100 text-amber-600 px-4 py-1.5 rounded-full font-black text-sm uppercase tracking-widest border border-amber-200 flex items-center gap-2">
+                            <Mic size={14}/> {gameAlert.participantNumber === 'GROUP ACTIVITY' ? 'GROUP TURN' : `Student #${gameAlert.participantNumber}`}
+                        </span>
+                    </div>
+                </div>
+                <div className="flex bg-slate-50 border-t border-slate-100 p-4 gap-4">
+                    <button onClick={() => setGameAlert(null)} className="flex-1 py-3 rounded-xl font-black uppercase text-sm tracking-widest text-slate-400 hover:bg-slate-200 transition-colors">
+                        Ignore
+                    </button>
+                    <button onClick={handleAcceptAlert} className="flex-[2] bg-amber-400 hover:bg-amber-300 text-amber-950 py-3 rounded-xl font-black uppercase text-sm tracking-widest shadow-md transition-all flex items-center justify-center gap-2">
+                        <PlayCircle size={18}/> Go to Grade
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+
       <header className="bg-[#0f1115] text-white h-12 flex items-center border-b border-slate-800 sticky top-0 z-50">
         <div className="flex justify-between items-center w-full max-w-[98%] mx-auto px-2">
           <div className="flex items-center gap-3">
@@ -258,7 +388,27 @@ const JudgesView = () => {
         </div>
       </header>
 
-      {/* PANELES DE CATEGORÍAS */}
+      {liveGameState && liveGameState.game && liveGameState.phase !== 'READY' && (
+        <div className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between shadow-md border-b border-rose-500 z-40 relative">
+          <div className="flex items-center gap-3">
+            <div className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.8)]"></div>
+            <span className="font-black uppercase tracking-widest text-xs text-rose-400 flex items-center gap-1"><Mic size={14}/> LIVE STAGE</span>
+            <div className="h-4 w-px bg-slate-700 mx-2"></div>
+            <span className="font-bold text-[11px] uppercase tracking-widest text-slate-300">
+              {normalizedLiveGameCategory} • R{liveGameState.round}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 shadow-inner">
+            <span className="text-[10px] text-slate-400 uppercase font-black tracking-widest">On Stage:</span>
+            <span className="text-sm font-black text-amber-400 uppercase">
+                {liveGameState.participantNumber === 'GROUP ACTIVITY' 
+                    ? `GROUP ${liveGameState.currentGroupIdx + 1}` 
+                    : `#${liveGameState.participantNumber}`}
+            </span>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white shadow-sm border-b border-slate-200">
         <div className="max-w-[98%] mx-auto p-3">
           <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Select Category</p>
@@ -278,7 +428,6 @@ const JudgesView = () => {
       </div>
 
       {selectedCategory === "ALL" ? (
-        /* VISTA GLOBAL DE RANKING */
         <main className="max-w-[98%] mx-auto p-4 mt-2">
            <div className="bg-white rounded-[2rem] p-6 shadow-xl border border-slate-200 min-h-[70vh]">
               <h2 className="text-2xl font-black uppercase tracking-widest mb-6 flex items-center gap-3 text-slate-800">
@@ -287,16 +436,11 @@ const JudgesView = () => {
               
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                  {CATEGORIES.filter(c => c.id !== "ALL").map(cat => {
-                     const catParticipants = participants.filter(p => p.category === cat.name.toUpperCase())
-                         .sort((a,b) => calculateGrandTotalAllJudges(b.scoresObj) - calculateGrandTotalAllJudges(a.scoresObj));
-
+                     const catParticipants = participants.filter(p => p.category === cat.name.toUpperCase()).sort((a,b) => calculateGrandTotalAllJudges(b.scoresObj) - calculateGrandTotalAllJudges(a.scoresObj));
                      if(catParticipants.length === 0) return null;
-
                      return (
                          <div key={cat.id} className="bg-slate-50 rounded-2xl border border-slate-200 p-4">
-                            <h3 className={`font-black uppercase tracking-widest text-sm mb-4 ${cat.text} flex items-center gap-2`}>
-                               {cat.icon} {cat.name}
-                            </h3>
+                            <h3 className={`font-black uppercase tracking-widest text-sm mb-4 ${cat.text} flex items-center gap-2`}>{cat.icon} {cat.name}</h3>
                             <div className="space-y-2">
                                {catParticipants.slice(0, 10).map((p, idx) => (
                                    <div key={p._id} className="flex justify-between items-center bg-white p-2.5 rounded-xl border border-slate-100 shadow-sm">
@@ -317,10 +461,8 @@ const JudgesView = () => {
            </div>
         </main>
       ) : (
-        /* VISTA NORMAL DE JUECES (3 COLUMNAS) */
         <main className="max-w-[98%] mx-auto p-4 lg:flex lg:gap-6 lg:items-start mt-2">
           
-          {/* COLUMNA 1: RONDAS Y PARTICIPANTES */}
           <div className="lg:w-1/4 space-y-4">
             <div className="bg-white p-4 rounded-[1.5rem] shadow-sm border border-slate-200">
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Select Round</h3>
@@ -341,45 +483,41 @@ const JudgesView = () => {
                 </div>
                 <div className="relative">
                   <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input 
-                    type="text" 
-                    placeholder="Search # or name..." 
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full bg-white border border-slate-200 rounded-lg py-1.5 pl-8 pr-3 text-[10px] font-bold outline-none focus:border-amber-400 transition-all"
-                  />
+                  <input type="text" placeholder="Search # or name..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg py-1.5 pl-8 pr-3 text-[10px] font-bold outline-none focus:border-amber-400 transition-all"/>
                 </div>
               </div>
-              <div className="overflow-y-auto flex-1 p-2 space-y-1">
+              <div className="overflow-y-auto flex-1 p-2">
                 {filteredParticipants.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full text-slate-400">
                     <p className="font-bold text-[10px] uppercase tracking-widest">No participants found</p>
                   </div>
                 ) : (
-                  filteredParticipants.map(p => {
-                    const isSelected = selectedParticipant?._id === p._id;
-                    const hasMyScores = p.scoresObj && p.scoresObj[judgeUsername]?.[`round_${selectedRound}`] && Object.keys(p.scoresObj[judgeUsername]?.[`round_${selectedRound}`]).length > 0;
-                    
-                    return (
-                      <button key={p._id} onClick={() => setSelectedParticipant(p)} className={`w-full text-left p-3 rounded-xl flex items-center justify-between transition-all ${isSelected ? `${activeCategoryObj?.color} text-white shadow-md` : 'hover:bg-slate-50 bg-white'}`}>
-                        <div className="flex items-center gap-3">
-                          <div className={`w-7 h-7 rounded-full flex items-center justify-center font-black text-[10px] ${isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                            {p.order_number}
-                          </div>
-                          <div>
-                            <span className={`font-black text-[11px] block leading-none uppercase tracking-wide ${isSelected ? 'text-white' : 'text-slate-700'}`}>{p.name}</span>
-                            {hasMyScores && !isSelected && <span className="text-[8px] font-bold text-emerald-500 uppercase tracking-widest mt-1 block">✓ Graded</span>}
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })
+                  selectedCategory === "AMERICAN THINK STARTER" && selectedRound === "2" ? (
+                    <div className="space-y-4 pb-2">
+                       {Array.from({ length: dynamicNumGroups }).map((_, gIdx) => {
+                           const groupParts = filteredParticipants.filter(p => getAmericanThinkGroup(p._id) === gIdx);
+                           if(groupParts.length === 0) return null;
+                           return (
+                               <div key={`group-${gIdx}`} className="bg-slate-50 rounded-[1rem] p-2 border border-slate-200 shadow-sm">
+                                   <div className="bg-slate-800 text-white text-[10px] font-black px-4 py-2 rounded-xl uppercase tracking-widest mb-2 flex justify-between items-center">
+                                       <span>TURN: GROUP {gIdx + 1}</span>
+                                       <Users size={14} className="text-amber-400" />
+                                   </div>
+                                   <div>{groupParts.map(p => renderParticipantButton(p))}</div>
+                               </div>
+                           )
+                       })}
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      {filteredParticipants.map(p => renderParticipantButton(p))}
+                    </div>
+                  )
                 )}
               </div>
             </div>
           </div>
 
-          {/* COLUMNA 2: RÚBRICA Y CALIFICACIÓN */}
           <div className="lg:w-2/4 mt-6 lg:mt-0">
             {!selectedParticipant ? (
               <div className="bg-white rounded-[2rem] border-2 border-dashed border-slate-200 h-[60vh] flex flex-col items-center justify-center text-slate-400">
@@ -419,13 +557,7 @@ const JudgesView = () => {
                           </div>
                           <div className="grid grid-cols-4 md:grid-cols-6 gap-2 pt-1">
                             {scoreOptions.map(score => (
-                              <button
-                                key={score}
-                                onClick={() => handleScoreSelect(rubric.key, score)}
-                                className={`py-2.5 rounded-xl font-black text-lg transition-all border-2
-                                  ${selectedScore === score ? (score > 0 ? 'bg-emerald-500 border-emerald-600 text-white transform scale-105 shadow-md' : 'bg-rose-500 border-rose-600 text-white transform scale-105 shadow-md') 
-                                    : 'bg-slate-50 border-slate-200 text-slate-400 hover:bg-slate-100'}`}
-                              >
+                              <button key={score} onClick={() => handleScoreSelect(rubric.key, score)} className={`py-2.5 rounded-xl font-black text-lg transition-all border-2 ${selectedScore === score ? (score > 0 ? 'bg-emerald-500 border-emerald-600 text-white transform scale-105 shadow-md' : 'bg-rose-500 border-rose-600 text-white transform scale-105 shadow-md') : 'bg-slate-50 border-slate-200 text-slate-400 hover:bg-slate-100'}`}>
                                 {score}
                               </button>
                             ))}
@@ -438,7 +570,6 @@ const JudgesView = () => {
                   )}
                 </div>
 
-                {/* BARRA DE GUARDADO (ESTÁTICA, NO FIXED) */}
                 <div className="bg-slate-900 rounded-[1.5rem] p-3 shadow-lg flex items-center justify-between border border-slate-700 mt-6">
                   <div className="text-slate-300 px-3">
                     {allCriteriaScored ? <p className="text-[10px] uppercase tracking-widest font-black"><span className="text-emerald-400">✓ Ready</span> to save</p> : <p className="text-[10px] uppercase tracking-widest font-black"><span className="text-amber-400 animate-pulse">! Pending</span> scores</p>}
@@ -455,7 +586,6 @@ const JudgesView = () => {
             )}
           </div>
 
-          {/* COLUMNA 3: RESUMEN GLOBAL Y LEADERBOARD */}
           <div className="lg:w-1/4 mt-6 lg:mt-0 space-y-4">
             <div className="bg-slate-900 text-white p-4 rounded-[1.5rem] shadow-xl border-2 border-slate-800 relative overflow-hidden">
               <div className="absolute -right-2 -top-2 opacity-10"><BarChart3 size={80}/></div>

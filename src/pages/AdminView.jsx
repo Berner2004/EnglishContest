@@ -13,18 +13,18 @@ const socket = io(API_BASE_URL);
 const AdminView = () => {
   const navigate = useNavigate();
   
-  // ESTADOS
   const [activeCategory, setActiveCategory] = useState(null);
   const [participants, setParticipants] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   
-  // NUEVOS ESTADOS
-  const [branch, setBranch] = useState('COCA'); // Selector COCA / SACHA
+  const [branch, setBranch] = useState('COCA'); 
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
   const [liveParticipants, setLiveParticipants] = useState([]);
 
-  // Configuración de categorías
+  // Elegir CUÁNTOS GRUPOS (turnos) habrá en la Ronda 2 (Máximo 4)
+  const [numberOfGroups, setNumberOfGroups] = useState(4); 
+
   const categoryDetails = {
     "LITTLE STEPS": { desc: "Nivel inicial (4-5 años). Enfoque en reconocimiento visual.", icon: <Users />, route: '/juego/little-steps' },
     "POWER UP 1": { desc: "Nivel inicial. Enfoque en vocabulario básico y deletreo.", icon: <BookOpen />, route: '/juego/power-up-1' },
@@ -41,7 +41,6 @@ const AdminView = () => {
     return () => { document.body.style.backgroundColor = ''; };
   }, []);
 
-  // MOTOR DE PUNTAJES EN TIEMPO REAL PARA EL ADMIN
   const fetchGlobalScores = useCallback(async () => {
     try {
       const [partsRes, scoresRes] = await Promise.all([
@@ -61,7 +60,6 @@ const AdminView = () => {
     }
   }, [branch]);
 
-  // Escuchar a los jueces en tiempo real
   useEffect(() => {
     if (isLeaderboardOpen) fetchGlobalScores();
 
@@ -75,11 +73,11 @@ const AdminView = () => {
     };
   }, [isLeaderboardOpen, fetchGlobalScores]);
 
-  // CARGAR ESTUDIANTES PARA EL JUEGO
   const openConfig = async (categoryName) => {
     setLoading(true);
     setActiveCategory(categoryName);
     setIsModalOpen(true);
+    setNumberOfGroups(4); // Reseteamos a 4 grupos por defecto
     
     try {
       if (categoryName === "GRAND FINAL") {
@@ -106,7 +104,7 @@ const AdminView = () => {
 
   const closeModal = () => {
     setIsModalOpen(false);
-    setActiveCategory(null);
+    setTimeout(() => setActiveCategory(null), 300); 
   };
 
   const toggleStatus = (id, currentStatus) => {
@@ -125,26 +123,22 @@ const AdminView = () => {
       return;
     }
     const targetRoute = categoryDetails[activeCategory].route;
-    navigate(targetRoute, { state: { participants: presentOnes } });
+    navigate(targetRoute, { state: { participants: presentOnes, numberOfGroups } });
   };
 
-  // REINICIAR VOTACIONES GLOBALES (TODOS LOS CONCURSOS)
   const handleResetAllScores = async () => {
     const confirm1 = window.confirm(`⚠️ PELIGRO EXTREMO: Estás a punto de ELIMINAR LOS PUNTAJES DE TODOS LOS CONCURSOS. Esta acción NO se puede deshacer. ¿Estás absolutamente seguro?`);
     if (!confirm1) return;
-
     const confirm2 = window.confirm(`⚠️ ÚLTIMA ADVERTENCIA: ¿Confirmas que deseas BORRAR TODOS LOS DATOS de calificación?`);
     if (!confirm2) return;
 
     try {
-      // Enviamos la petición a /api/scores/ALL
       await axios.delete(`${API_BASE_URL}/api/scores/ALL?branch=${branch}`);
       alert("Todas las votaciones de todos los concursos han sido reiniciadas a cero.");
-      socket.emit('sync_state', { action: 'score_updated' }); // Avisar a los jueces
+      socket.emit('sync_state', { action: 'score_updated' }); 
       if (isLeaderboardOpen) fetchGlobalScores();
     } catch (error) {
-      alert("Error al reiniciar votaciones. Asegúrate de que el backend tenga el endpoint configurado.");
-      console.error(error);
+      alert("Error al reiniciar votaciones.");
     }
   };
 
@@ -153,7 +147,6 @@ const AdminView = () => {
     navigate('/login');
   };
 
-  // Cálculos de suma total para el Leaderboard
   const calculateGrandTotal = (scoresObj) => {
     if (!scoresObj) return 0;
     let total = 0;
@@ -181,8 +174,6 @@ const AdminView = () => {
           </div>
           
           <div className="flex items-center gap-4 md:gap-6">
-            
-            {/* SELECTOR DE SEDE COCA/SACHA */}
             <div className="flex items-center bg-slate-100 p-1 rounded-full border border-slate-200 shadow-inner">
               <button 
                 onClick={() => setBranch('COCA')}
@@ -197,7 +188,6 @@ const AdminView = () => {
                 <MapPin size={12} /> Sacha
               </button>
             </div>
-            
             <button onClick={handleLogout} className="flex items-center gap-2 text-slate-400 hover:text-red-500 hover:bg-red-50 px-3 py-2 rounded-xl transition-all text-xs font-black uppercase tracking-widest">
               <LogOut size={16} /> <span className="hidden md:block">Salir</span>
             </button>
@@ -211,20 +201,11 @@ const AdminView = () => {
             <h2 className="text-4xl font-black text-slate-800 tracking-tighter">Panel de Gestión</h2>
             <p className="text-slate-500 font-medium mt-1 uppercase text-xs tracking-[0.2em]">Configuración para sede: <span className="text-sky-500 font-bold">{branch}</span></p>
           </div>
-
-          {/* BOTONES GLOBALES: REINICIAR TODO Y LIVE SCORES */}
           <div className="flex items-center gap-4">
-            <button 
-              onClick={handleResetAllScores}
-              className="bg-white hover:bg-red-50 text-red-500 border border-red-200 px-5 py-3 rounded-2xl font-black text-sm uppercase tracking-widest shadow-sm transition-all flex items-center gap-2"
-            >
+            <button onClick={handleResetAllScores} className="bg-white hover:bg-red-50 text-red-500 border border-red-200 px-5 py-3 rounded-2xl font-black text-sm uppercase tracking-widest shadow-sm transition-all flex items-center gap-2">
               <Trash2 size={18} /> <span className="hidden md:block">Reset All</span>
             </button>
-
-            <button 
-              onClick={() => setIsLeaderboardOpen(true)}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-2xl font-black text-sm uppercase tracking-widest shadow-lg shadow-indigo-200 transition-all flex items-center gap-2 animate-pulse"
-            >
+            <button onClick={() => setIsLeaderboardOpen(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-2xl font-black text-sm uppercase tracking-widest shadow-lg shadow-indigo-200 transition-all flex items-center gap-2 animate-pulse">
               <BarChart2 size={18} /> Live Scores
             </button>
           </div>
@@ -236,7 +217,7 @@ const AdminView = () => {
               <div key={cat} onClick={() => openConfig(cat)} className="group bg-white rounded-[2.5rem] p-10 border border-white shadow-xl shadow-sky-100/50 hover:shadow-2xl hover:shadow-sky-200/60 hover:-translate-y-2 transition-all cursor-pointer relative overflow-hidden">
                 <div className="relative z-10">
                   <div className="w-16 h-16 bg-sky-100 text-sky-600 rounded-2xl flex items-center justify-center mb-8 group-hover:bg-sky-500 group-hover:text-white transition-colors">
-                    {React.cloneElement(categoryDetails[cat].icon, { size: 32 })}
+                    {categoryDetails[cat].icon && React.cloneElement(categoryDetails[cat].icon, { size: 32 })}
                   </div>
                   <h3 className="text-2xl font-black text-slate-800 mb-3 uppercase tracking-tighter">{cat}</h3>
                   <p className="text-sm text-slate-400 font-medium leading-relaxed mb-8">{categoryDetails[cat].desc}</p>
@@ -250,7 +231,6 @@ const AdminView = () => {
         </div>
       </main>
 
-      {/* ================= MODAL DE LISTA DE ESTUDIANTES ================= */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={closeModal}></div>
@@ -258,7 +238,7 @@ const AdminView = () => {
             <div className="p-10 border-b border-slate-50 flex justify-between items-center bg-white sticky top-0 z-10">
               <div className="flex items-center gap-5">
                 <div className="p-4 bg-sky-500 text-white rounded-2xl shadow-lg shadow-sky-100">
-                  {React.cloneElement(categoryDetails[activeCategory]?.icon, { size: 28 })}
+                  {activeCategory && categoryDetails[activeCategory]?.icon && React.cloneElement(categoryDetails[activeCategory].icon, { size: 28 })}
                 </div>
                 <div>
                   <h3 className="text-3xl font-black text-slate-800 uppercase tracking-tighter">{activeCategory} - {branch}</h3>
@@ -273,8 +253,28 @@ const AdminView = () => {
             <div className="flex-1 overflow-y-auto p-10 bg-slate-50/30">
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
                 <div className="lg:col-span-1 space-y-6">
-                  <div className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm">
-                    <h4 className="text-slate-800 font-black text-xs uppercase tracking-widest mb-4 flex items-center gap-2">
+                  
+                  {activeCategory === "AMERICAN THINK STARTER" && (
+                    <div className="bg-orange-50 border border-orange-200 p-6 rounded-[2rem] shadow-sm">
+                      <h4 className="text-orange-800 font-black text-xs uppercase tracking-widest mb-4 flex items-center gap-2">
+                        <Users size={16} className="text-orange-500" /> Rondas Grupales
+                      </h4>
+                      <p className="text-xs text-orange-600 mb-3 font-bold">¿Cuántos grupos (turnos) habrá en la Ronda 2?</p>
+                      <select 
+                        value={numberOfGroups} 
+                        onChange={(e) => setNumberOfGroups(Number(e.target.value))}
+                        className="w-full bg-white border-2 border-orange-300 text-orange-900 rounded-xl px-4 py-3 outline-none font-black cursor-pointer shadow-sm focus:border-orange-500 transition-all"
+                      >
+                        <option value={1}>1 Grupo</option>
+                        <option value={2}>2 Grupos</option>
+                        <option value={3}>3 Grupos</option>
+                        <option value={4}>4 Grupos</option>
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+                    <h4 className="text-slate-800 font-black text-xs uppercase tracking-widest mb-2 flex items-center gap-2">
                       <Info size={16} className="text-sky-500" /> Detalles
                     </h4>
                     <p className="text-slate-500 text-sm font-medium leading-relaxed">{categoryDetails[activeCategory]?.desc}</p>
@@ -333,7 +333,6 @@ const AdminView = () => {
         </div>
       )}
 
-      {/* ================= MODAL LIVE LEADERBOARD ================= */}
       {isLeaderboardOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm" onClick={() => setIsLeaderboardOpen(false)}></div>
@@ -381,7 +380,6 @@ const AdminView = () => {
           </div>
         </div>
       )}
-
     </div>
   );
 };

@@ -210,32 +210,43 @@ const AdminView = () => {
               rouletteCategory,
               participants: rouletteParticipants.map(p => p.name),
               spinning: false,
-              winnerName: ""
+              winnerName: "" // Mientras no gire, el nombre debe estar vacío
           });
-      } else if (!isRouletteOpen) {
-          socket.emit('clear_state');
       }
-  }, [isRouletteOpen, rouletteCategory, rouletteParticipants]);
+  }, [isRouletteOpen, rouletteCategory, rouletteParticipants.length]); 
+  // Nota: quitamos 'spinning' de las dependencias para que no se resetee el nombre al term
 
 
   const spinRoulette = () => {
       if (rouletteParticipants.length === 0) return;
-      setSpinning(true);
+      
+      // 1. Elegimos al ganador ALEATORIAMENTE antes de mandar el comando de giro
       const winner = rouletteParticipants[Math.floor(Math.random() * rouletteParticipants.length)];
       
-      // Emitimos UNA SOLA VEZ el giro y el ganador, PublicView hace la magia.
+      setSpinning(true);
+
+      // 2. Emitimos el inicio del giro incluyendo YA el nombre del ganador seleccionado.
+      // Esto permite que la PublicView calcule los grados exactos para que ese nombre quede ARRIBA.
       socket.emit('sync_state', {
           game: 'ROULETTE_MODE',
           rouletteCategory,
           participants: rouletteParticipants.map(p => p.name),
           spinning: true,
-          winnerName: winner.name
+          winnerName: winner.name // El nombre se envía desde el segundo 0
       });
 
-      // Liberamos el botón tras 6 segundos
+      // 3. Esperamos exactamente 6 segundos (el tiempo que dura la animación en PublicView)
+      // para enviar la señal de "detenerse" y que aparezca el anuncio gigante.
       setTimeout(() => {
           setSpinning(false);
-      }, 6000);
+          socket.emit('sync_state', {
+              game: 'ROULETTE_MODE',
+              rouletteCategory,
+              participants: rouletteParticipants.map(p => p.name),
+              spinning: false, // Al poner esto en false, se activa el modal en la PublicView
+              winnerName: winner.name
+          });
+      }, 6000); // 6 segundos es el tiempo de la transición visual
   };
 
   const closeRoulette = () => {

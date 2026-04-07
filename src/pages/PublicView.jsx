@@ -5,7 +5,7 @@ import { io } from 'socket.io-client';
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://concursoengllish.onrender.com';
 const socket = io(API_BASE_URL);
 
-// COMPONENTE DE RULETA VISUAL (SVG DINÁMICO)
+// COMPONENTE DE RULETA VINCULADO AL RESULTADO
 const VisualRoulette = ({ participants, spinning, winnerName }) => {
     const [rotation, setRotation] = useState(0);
     const prevWinner = useRef("");
@@ -16,13 +16,17 @@ const VisualRoulette = ({ participants, spinning, winnerName }) => {
             if (winIndex !== -1) {
                 const total = participants.length;
                 const sliceAngle = 360 / total;
-                // Ajuste matemático para que el nombre quede arriba (-90 grados SVG = Norte)
+
+                // 1. Calculamos el centro del chip del ganador
                 const targetCenter = (winIndex * sliceAngle) + (sliceAngle / 2);
-                const offset = (360 - targetCenter) - 90;
+                
+                // 2. COMPENSACIÓN PARA EL LADO IZQUIERDO:
+                // Usamos 180 grados para que el punto de stock sea exactamente el centro izquierdo
+                const offset = (360 - targetCenter) + 270; 
                 
                 const currentMod = rotation % 360;
-                // 5 vueltas completas de suspenso (1800 grados) + el offset para caer en el ganador
-                const nextRotation = rotation - currentMod + 1800 + offset;
+                // Damos 6 vueltas para que se vea rápido y frene justo en la flecha izquierda
+                const nextRotation = rotation - currentMod + 2160 + offset;
 
                 setRotation(nextRotation);
                 prevWinner.current = winnerName;
@@ -33,29 +37,29 @@ const VisualRoulette = ({ participants, spinning, winnerName }) => {
     const colors = ["#f59e0b", "#3b82f6", "#10b981", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#06b6d4", "#6366f1"];
 
     return (
-        <div className="relative w-[350px] h-[350px] md:w-[650px] md:h-[650px] flex items-center justify-center animate-in zoom-in duration-500">
-            {/* Punteros de la ruleta */}
-            <div className="absolute top-[-30px] md:top-[-45px] z-20 w-0 h-0 border-l-[30px] border-r-[30px] border-t-[60px] border-l-transparent border-r-transparent border-t-red-600 drop-shadow-[0_5px_10px_rgba(0,0,0,0.5)]"></div>
-            <div className="absolute top-[-25px] md:top-[-40px] z-21 w-0 h-0 border-l-[20px] border-r-[20px] border-t-[40px] border-l-transparent border-r-transparent border-t-amber-400"></div>
+        /* Aumentamos de w-[600px] a w-[750px] para que destaque más en pantalla completa */
+        <div className="relative w-[380px] h-[380px] md:w-[750px] md:h-[750px] flex items-center justify-center animate-in zoom-in duration-500">
+            
+            {/* FLECHA INDICADORA IZQUIERDA (Ajustada al nuevo tamaño) */}
+            <div className="absolute left-[-45px] z-50 flex items-center">
+                <div className="w-0 h-0 border-t-[30px] border-b-[30px] border-l-[50px] border-t-transparent border-b-transparent border-l-rose-500 drop-shadow-[0_0_20px_rgba(244,63,94,0.8)]"></div>
+                <div className="w-3 h-20 bg-rose-500 rounded-full blur-[2px] -ml-1"></div>
+            </div>
 
-            {/* Gráfico SVG de la Ruleta */}
-            <svg
-                viewBox="0 0 500 500"
-                className="w-full h-full rounded-full shadow-[0_0_80px_rgba(0,0,0,0.6)] border-[16px] border-slate-800 bg-slate-900"
+            <svg viewBox="0 0 500 500" 
+                className="w-full h-full rounded-full shadow-[0_0_80px_rgba(0,0,0,0.6)] border-[15px] border-slate-800 bg-slate-900"
                 style={{
                     transform: `rotate(${rotation}deg)`,
-                    transition: spinning ? 'transform 5s cubic-bezier(0.15, 0.9, 0.2, 1)' : 'none'
-                }}
-            >
-                {participants.length > 0 && participants.map((name, i) => {
+                    transition: spinning ? 'transform 6s cubic-bezier(0.1, 0.8, 0.2, 1)' : 'none'
+                }}>
+                {participants.map((name, i) => {
                     const total = participants.length;
                     const sliceAngle = 360 / total;
                     const startAngle = i * sliceAngle;
-                    const endAngle = (i + 1) * sliceAngle;
                     const midAngle = startAngle + sliceAngle / 2;
 
                     const startRad = (startAngle - 90) * Math.PI / 180;
-                    const endRad = (endAngle - 90) * Math.PI / 180;
+                    const endRad = ((i + 1) * sliceAngle - 90) * Math.PI / 180;
 
                     const x1 = 250 + 240 * Math.cos(startRad);
                     const y1 = 250 + 240 * Math.sin(startRad);
@@ -65,37 +69,39 @@ const VisualRoulette = ({ participants, spinning, winnerName }) => {
                     const largeArc = sliceAngle > 180 ? 1 : 0;
                     const d = `M 250 250 L ${x1} ${y1} A 240 240 0 ${largeArc} 1 ${x2} ${y2} Z`;
 
-                    const fillColor = colors[i % colors.length];
-
                     return (
                         <g key={i}>
-                            <path d={d} fill={fillColor} stroke="#1e293b" strokeWidth="2" />
-                            <g transform={`translate(250, 250) rotate(${midAngle - 90}) translate(130, 0)`}>
+                            <path d={d} fill={colors[i % colors.length]} stroke="#1e293b" strokeWidth="1" />
+                            <g transform={`translate(250, 250) rotate(${midAngle - 90}) translate(140, 0)`}>
                                 <text
                                     fill="#ffffff"
-                                    fontSize={total > 25 ? "8" : total > 15 ? "11" : "16"}
+                                    /* Aumentamos ligeramente el tamaño de la fuente para la nueva escala */
+                                    fontSize={total > 30 ? "8" : total > 15 ? "12" : "16"}
                                     fontWeight="900"
                                     alignmentBaseline="middle"
                                     textAnchor="middle"
-                                    style={{ textShadow: "1px 1px 3px rgba(0,0,0,0.7)" }}
+                                    style={{ textShadow: "1px 1px 3px rgba(0,0,0,0.8)" }}
                                 >
-                                    {name.length > 14 ? name.substring(0, 12) + "..." : name}
+                                    {name.length > 15 ? name.substring(0, 13) + ".." : name}
                                 </text>
                             </g>
                         </g>
                     );
                 })}
                 <circle cx="250" cy="250" r="40" fill="#1e293b" stroke="#f59e0b" strokeWidth="8" />
-                <polygon points="250,225 258,245 278,245 262,258 268,278 250,265 232,278 238,258 222,245 242,245" fill="#f59e0b" />
             </svg>
 
-            {/* MODAL DE GANADOR GIGANTE */}
+            {/* ANUNCIO EMERGENTE ENLAZADO (Tamaño Ajustado) */}
             {!spinning && winnerName && rotation > 0 && (
-                <div className="absolute inset-0 z-30 flex items-center justify-center animate-in zoom-in fade-in duration-500">
-                    <div className="absolute inset-0 bg-slate-950/85 rounded-full backdrop-blur-md"></div>
-                    <div className="bg-emerald-500 border-[12px] border-white px-10 py-10 md:px-20 md:py-14 rounded-[3rem] shadow-[0_0_150px_rgba(16,185,129,1)] z-40 transform scale-110 flex flex-col items-center w-[120%] text-center">
-                        <span className="text-emerald-100 font-black uppercase tracking-[0.4em] text-sm md:text-xl mb-4">WINNER SELECTED!</span>
-                        <h2 className="text-5xl md:text-8xl lg:text-[8rem] leading-none font-black text-white uppercase drop-shadow-2xl">{winnerName}</h2>
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 animate-in fade-in zoom-in duration-700">
+                    <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md"></div>
+                    <div className="relative bg-gradient-to-br from-emerald-500 to-emerald-700 border-[10px] border-white rounded-[3rem] shadow-[0_0_80px_rgba(16,185,129,0.6)] flex flex-col items-center justify-center text-center p-8 md:p-14 w-full max-w-3xl transform scale-100">
+                        <Trophy size={80} className="text-white mb-4 animate-bounce" />
+                        <span className="text-emerald-100 font-black uppercase tracking-[0.4em] text-lg md:text-xl">WINNER SELECTED!</span>
+                        <h2 className="text-4xl md:text-7xl font-black text-white uppercase leading-tight mt-2 mb-6">{winnerName}</h2>
+                        <div className="bg-white/20 px-8 py-3 rounded-full border border-white/30 text-white text-lg font-bold uppercase tracking-widest">
+                            Congratulations! 🌟
+                        </div>
                     </div>
                 </div>
             )}
@@ -123,7 +129,12 @@ const PublicView = () => {
         audioRefBoardsUp.current.play().catch(err => console.error("Audio block:", err));
       }
 
-      if (payload.timeLeft === 0 && (payload.phase?.includes('WRITE') || payload.phase?.includes('DICTATION'))) {
+      if (payload.timeLeft === 0 && (
+        payload.phase?.includes('WRITE') ||
+        payload.phase?.includes('DICTATION') ||
+        payload.phase === 'MEMORY_SHOW' ||
+        payload.phase === 'MEMORY_SPEAK'
+      )) {
         if (audioRefTimeUp.current) {
           audioRefTimeUp.current.play().catch(err => console.error("Audio block:", err));
         }
@@ -543,6 +554,49 @@ const PublicView = () => {
                   />
                   <div className={`absolute top-6 right-6 ${theme.primary} text-white px-5 py-2 rounded-full font-black shadow-lg`}>
                     IMAGE {(['SPEED_CHALLENGE', 'SPEED_IMAGES'].includes(phase) ? 0 : activeImgIdx) + 1}
+                  </div>
+                </div>
+              )}
+
+              {/* --- VISTA: MEMORY GAME (BORDE REDONDEADO SIMÉTRICO E IMAGEN MÁXIMA) --- */}
+              {phase === 'MEMORY_SHOW' && displayImages?.length > 0 && (
+                <div className="w-full h-full flex flex-wrap items-center justify-center gap-6 md:gap-10 p-4 md:p-8 content-center animate-in zoom-in duration-500">
+                  {displayImages.map((src, idx) => (
+                    <div 
+                      key={idx} 
+                      className="bg-white p-1 rounded-[1.5rem] md:rounded-[2.5rem] border-[10px] border-slate-700 shadow-2xl flex items-center justify-center overflow-hidden"
+                      style={{
+                        width: displayImages.length <= 4 ? '45%' : '31%', 
+                        height: displayImages.length <= 4 ? '45%' : '42%',
+                        maxWidth: '480px', 
+                        maxHeight: '420px' 
+                      }}
+                    >
+                      <img 
+                        src={src} 
+                        alt={`Memory ${idx}`} 
+                        className="w-full h-full object-contain pointer-events-none rounded-[1rem] md:rounded-[2rem]" 
+                        style={{ transform: 'scale(1.02)' }} 
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* --- ESTADO: SPEAK NOW! (CUANDO SE OCULTAN LAS IMÁGENES) --- */}
+              {phase === 'MEMORY_SPEAK' && (
+                <div className="text-center space-y-8 animate-in zoom-in duration-500">
+                  <div className="relative">
+                    <Brain size={160} className={`${theme.textMain} mx-auto animate-pulse opacity-20 absolute inset-0 blur-xl`} />
+                    <Brain size={160} className={`${theme.textMain} mx-auto animate-pulse relative z-10`} />
+                  </div>
+                  <h1 className="text-7xl md:text-[9rem] font-black text-white uppercase italic tracking-tighter leading-none drop-shadow-2xl">
+                    SPEAK NOW!
+                  </h1>
+                  <div className={`${theme.bgLight} border ${theme.borderLight} px-10 py-4 rounded-full inline-block`}>
+                    <p className="text-white text-3xl font-bold uppercase tracking-widest">
+                      What images were on the screen?
+                    </p>
                   </div>
                 </div>
               )}

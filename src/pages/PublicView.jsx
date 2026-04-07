@@ -152,20 +152,29 @@ const PublicView = () => {
     };
   }, []);
 
+  // --- FUNCIÓN DE FORMATO MEJORADA (REGLA DE DÍAS DE LA SEMANA) ---
   const formatWord = (word) => {
     if (!word) return "";
+    
     const days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
-    const lowerWord = word.toLowerCase().trim();
+    
+    // Quita espacios para validar si la palabra subyacente es un día (ej. si entra "m o n d a y")
+    const cleanLower = word.replace(/\s+/g, '').toLowerCase();
 
-    if (days.includes(lowerWord)) {
-      return lowerWord.charAt(0).toUpperCase() + lowerWord.slice(1);
+    // Regla 1: Si es un día de la semana (normal o revelado)
+    if (days.includes(cleanLower)) {
+      // Pone en minúscula y capitaliza solo la primera letra real
+      return word.toLowerCase().replace(/[a-z]/, match => match.toUpperCase());
     }
 
+    // Regla 2: Si es una palabra revuelta (scramble) enviada por el Admin, 
+    // el Admin ya envía la 1ra letra en mayúscula (Ej: "O m n a y d"). La respetamos.
     if (word.includes(" ") && /[A-Z]/.test(word)) {
       return word;
     }
 
-    return lowerWord;
+    // Regla 3: Si no es un día y no es un scramble capitalizado, todo a minúsculas
+    return word.toLowerCase();
   };
 
   const SponsorsBanner = () => (
@@ -594,13 +603,15 @@ const PublicView = () => {
               )}
 
               {/* SCRAMBLE VIEW (MUESTRA LA PALABRA REVUELTA 1 POR 1) */}
+              {/* SE QUITÓ LA LÓGICA QUE MOSTRABA VARIAS PALABRAS A LA VEZ */}
               {['SCRAMBLED', 'SCRAMBLED_VIEW'].includes(phase) && displayWords?.length > 0 && (
                 <div className="flex flex-col items-center justify-center h-full w-full gap-4 md:gap-6 px-4">
                   <p className={`${theme.textLight} font-black text-xl md:text-2xl tracking-[0.4em] animate-pulse ${theme.bgLight} py-2 px-6 rounded-full border ${theme.borderLight} shadow-lg inline-block mb-2 shrink-0`}>
                     MEMORIZE SCRAMBLE!
                   </p>
                   <div className="flex flex-col items-center justify-center gap-4 md:gap-8 w-full flex-1 min-h-0 pb-10">
-                      <h1 key={`scramble-${activeWordIdx}`} className="text-[10vw] leading-none font-black text-white tracking-[0.4em] drop-shadow-[0_10px_30px_rgba(0,0,0,0.5)] text-center lowercase animate-in slide-in-from-right-8 fade-in duration-300">
+                      {/* AHORA SIEMPRE MUESTRA SOLO LA PALABRA DEL TURNO ACTUAL */}
+                      <h1 key={`scramble-${activeWordIdx}`} className="text-[10vw] leading-none font-black text-white tracking-[0.4em] drop-shadow-[0_10px_30px_rgba(0,0,0,0.5)] text-center animate-in slide-in-from-right-8 fade-in duration-300">
                           {formatWord(displayWords[activeWordIdx])}
                       </h1>
                   </div>
@@ -622,7 +633,7 @@ const PublicView = () => {
                           ? 'text-5xl md:text-7xl lg:text-[5vw]' 
                           : 'text-6xl md:text-8xl lg:text-[7vw]';
                        return (
-                          <h1 key={idx} className={`${textSizeClass} leading-none font-black text-white tracking-[0.1em] text-center lowercase drop-shadow-[0_10px_40px_rgba(16,185,129,0.6)]`}>
+                          <h1 key={idx} className={`${textSizeClass} leading-none font-black text-white tracking-[0.1em] text-center drop-shadow-[0_10px_40px_rgba(16,185,129,0.6)]`}>
                             {formatWord(word)}
                           </h1>
                        );

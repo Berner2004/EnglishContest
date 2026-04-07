@@ -3,7 +3,7 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { 
   Users, Play, Settings, Info, Award, Loader2, X, 
-  ChevronRight, BookOpen, Trophy, LogOut, MapPin, Trash2, BarChart2, Zap
+  ChevronRight, BookOpen, Trophy, LogOut, MapPin, Trash2, BarChart2, Zap, Camera
 } from 'lucide-react';
 import { io } from 'socket.io-client';
 
@@ -35,13 +35,15 @@ const AdminView = () => {
   const [liveParticipants, setLiveParticipants] = useState([]);
 
   const [isRouletteOpen, setIsRouletteOpen] = useState(false);
-  const [rouletteCategory, setRouletteCategory] = useState("KIDS BOX");
+  const [rouletteCategory, setRouletteCategory] = useState("LITTLE STEPS");
   const [rouletteParticipants, setRouletteParticipants] = useState([]);
   const [spinning, setSpinning] = useState(false);
 
   const [numberOfGroups, setNumberOfGroups] = useState(4); 
 
+  // AQUÍ SE AGREGA LITTLE STEPS NUEVAMENTE
   const categoryDetails = {
+    "LITTLE STEPS": { desc: "Nivel inicial (4-5 años). Enfoque en reconocimiento.", icon: <Camera />, route: '/juego/little-steps' },
     "KIDS BOX": { desc: "Nivel Primaria. Colores, objetos y gramática.", icon: <Info />, route: '/juego/kids-box' },
     "POWER UP 1": { desc: "Nivel inicial. Enfoque en vocabulario básico y deletreo.", icon: <BookOpen />, route: '/juego/power-up-1' },
     "POWER UP 3": { desc: "Nivel intermedio. Estructuras gramaticales y fluidez.", icon: <Zap />, route: '/juego/power-up-3' },
@@ -213,7 +215,7 @@ const AdminView = () => {
       } else if (!isRouletteOpen) {
           socket.emit('clear_state');
       }
-  }, [isRouletteOpen, rouletteCategory, rouletteParticipants]); // Se quitó 'spinning' para no interferir
+  }, [isRouletteOpen, rouletteCategory, rouletteParticipants]);
 
 
   const spinRoulette = () => {
@@ -348,7 +350,7 @@ const AdminView = () => {
         </div>
       )}
 
-      {/* MODALES CONFIGURACIÓN ABAJO */}
+      {/* MODALES DE CONFIGURACIÓN Y LEADERBOARD */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={closeModal}></div>

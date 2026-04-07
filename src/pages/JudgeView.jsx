@@ -1,18 +1,20 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Users, ChevronRight, CheckCircle2, Save, BookOpen, Brain, Zap, Trophy, Type, Info, BarChart3, Camera, Globe, Search, Mic, BellRing, PlayCircle, X } from 'lucide-react';
+import { Users, ChevronRight, CheckCircle2, Save, BookOpen, Brain, Zap, Trophy, Type, Info, BarChart3, Camera, Globe, Search, Mic, BellRing, PlayCircle, X, AlertTriangle, Award, LogIn } from 'lucide-react';
 import { io } from 'socket.io-client';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://concursoengllish.onrender.com';
 const socket = io(API_BASE_URL);
 
-// Identificador del juez que inició sesión
-const judgeUsername = sessionStorage.getItem('username') || 'unknown_judge';
-
 const ROUND_INFO = {
   "LITTLE STEPS": {
-    "1": { title: "Round 1: Listening, Spelling & Sentence", objective: "Evaluates ability to listen, spell correctly, and create a clear sentence (min. 6 words)." },
-    "2": { title: "Round 2: Board Challenge", objective: "Evaluates scrambled words resolution and accuracy in sentence and letter-by-letter dictation." },
-    "3": { title: "Round 3: Speed Reading & Recall", objective: "Evaluates reading speed, accuracy, and the ability to recall the last word to create a sentence." }
+    "1": { title: "Round 1: Picture Identification & Speed Images", objective: "Evaluates vocabulary recognition and speed response." },
+    "2": { title: "Round 2: Memory Challenge", objective: "Evaluates visual memory and short-term retention (4, 5 & 6 images)." },
+    "3": { title: "Round 3: Parent & Child Challenge", objective: "Evaluates teamwork, clear speaking by child, and accurate writing by parent." }
+  },
+  "KIDS BOX": {
+    "1": { title: "Round 1: Image Recognition + Reading & Spelling", objective: "Evaluates image recognition, reading, spelling, and pronunciation." },
+    "2": { title: "Round 2: Speed + Memory Challenge", objective: "Evaluates speed in naming images, reading words, and memory recall." },
+    "3": { title: "Round 3: Parent & Child Challenge", objective: "Evaluates teamwork, listening, and accurate communication." }
   },
   "POWER UP 1": {
     "1": { title: "Round 1: Recognition & Sentence", objective: "Evaluates image recognition, spelling of 2 words, and sentence structuring (min. 5 words)." },
@@ -28,68 +30,89 @@ const ROUND_INFO = {
     "1": { title: "Round 1: Listening, Spelling & Sentence", objective: "Evaluates ability to listen, spell correctly, and create a clear sentence (min. 6 words)." },
     "2": { title: "Round 2: Board Challenge (GROUP ACTIVITY)", objective: "Evaluates scrambled words resolution and accuracy in sentence and letter-by-letter dictation." },
     "3": { title: "Round 3: Speed Reading & Recall", objective: "Evaluates reading speed, accuracy, and the ability to recall the last word to create a valid sentence." }
+  },
+  "GRAND FINAL": {
+    "4": { title: "Round 4: Grand Final (Top 5)", objective: "Elite Skills: Rapid Continuous Spell & Blind Memory Recall." }
   }
 };
 
 const RUBRICS = {
   "LITTLE STEPS": {
     "1": [
-      { key: "word1", title: "Activity 1: Word 1 (Listen & Spell)", max: 2, desc: "2 pts: Says, spells, and repeats correctly. 1 pt: Minor error." },
-      { key: "word2", title: "Activity 2: Word 2 (Spell & Sentence)", max: 4, desc: "4 pts: Spells correctly and creates a clear sentence (min. 6 words). 3 pts: Minor error." }
+      { key: "pic", title: "Part 1 - Picture Identification", max: 3, pointsDesc: { 0: "Cannot identify or no response.", 1: "Only 1 image or hesitation/errors.", 2: "Most images, 1 minor mistake.", 3: "All 3 images clearly and quickly." } },
+      { key: "speed", title: "Part 2 - Speed Images", max: 3, pointsDesc: { 0: "Cannot respond under pressure.", 1: "Few correct, slow or several errors.", 2: "Good number, minor hesitation.", 3: "Names many quickly and fluently." } }
     ],
     "2": [
-      { key: "scramble", title: "Activity A (Scrambled Words)", max: 3, desc: "3 pts: Both words are completely correct. 2 pts: One minor mistake." },
-      { key: "dictation", title: "Activity B (Sentence Dictation)", max: 5, desc: "5 pts: Completely correct (capital letters, spaces, punctuation). 4 pts: 1 minor mistake." },
-      { key: "letter", title: "Activity C (Letter-by-Letter)", max: 5, desc: "5 pts: Sentence completely correct (spelling, grammar, and word order)." }
+      { key: "memory", title: "Memory Performance", max: 5, pointsDesc: { 0: "Cannot recall images.", 1: "Very limited recall.", 2: "Recalls few with difficulty.", 3: "Some images with omissions.", 4: "Good number, 1-2 minor mistakes.", 5: "Recalls most/all with confidence." } }
     ],
     "3": [
-      { key: "speed", title: "Speed Reading + Recall + Sentence", max: 3, desc: "3 pts: Reads quickly, correctly recalls/spells the last word, and creates a clear sentence." }
+      { key: "team", title: "Team Performance (Child+Parent)", max: 5, pointsDesc: { 0: "No communication/incorrect.", 1: "Limited teamwork, many mistakes.", 2: "Several errors, difficulty.", 3: "Some issues, 2-3 errors.", 4: "Good teamwork, 1 minor mistake.", 5: "Excellent teamwork, fast/accurate." } }
+    ]
+  },
+  "KIDS BOX": {
+    "1": [
+      { key: "img", title: "Part A - Image Recognition", max: 3, pointsDesc: { 0: "Unable to recognize or name.", 1: "Few images, errors/hesitation.", 2: "Most images, 1 minor mistake.", 3: "All images with clear pronunciation." } },
+      { key: "read", title: "Part B - Reading & Spelling", max: 3, pointsDesc: { 0: "Unable to read, spell, or complete.", 1: "Several errors or difficulty.", 2: "1-2 minor errors.", 3: "Reads, spells, rereads correctly." } }
+    ],
+    "2": [
+      { key: "speedImg", title: "Part A - Speed Images", max: 3, pointsDesc: { 0: "Cannot identify under pressure.", 1: "Few correct, slow or errors.", 2: "Good number, minor hesitation.", 3: "Names many quickly and accurately." } },
+      { key: "speedWord", title: "Part B - Speed Words", max: 3, pointsDesc: { 0: "Unable to read correctly.", 1: "Reads few, slow pace or errors.", 2: "Good number with minor errors.", 3: "Reads many fluently and accurately." } },
+      { key: "memory", title: "Part C - Memory Challenge", max: 4, pointsDesc: { 0: "Cannot recall images.", 1: "Very limited recall.", 2: "Recalls few with difficulty.", 3: "Good number, minor omissions.", 4: "Recalls most or all correctly." } }
+    ],
+    "3": [
+      { key: "team", title: "Team Performance (Student+Parent)", max: 5, pointsDesc: { 0: "No communication/incorrect.", 1: "Limited coordination, many mistakes.", 2: "Several errors, difficulty.", 3: "Some issues, 2-3 errors.", 4: "Good teamwork, 1 minor mistake.", 5: "Excellent teamwork, fast/accurate." } }
     ]
   },
   "POWER UP 1": {
     "1": [
-      { key: "act1", title: "Activity 1 (Images)", max: 3, desc: "Correctly identifies 3 words with good pronunciation." },
-      { key: "act2", title: "Activity 2 (Spelling)", max: 3, desc: "Reads, spells, and repeats both words correctly." },
-      { key: "act3", title: "Activity 3 (Sentence)", max: 3, desc: "Forms a clear, complete sentence (min. 5 words)." }
+      { key: "act1", title: "Activity 1 (Image Recognition)", max: 3, pointsDesc: { 0: "No responde.", 1: "2 errores o duda constante.", 2: "1 error leve/poco clara.", 3: "Dice las 3 palabras perfecto." } },
+      { key: "act2", title: "Activity 2 (Spelling 2 words)", max: 3, pointsDesc: { 0: "No completa.", 1: "Varios errores.", 2: "1 error leve.", 3: "Lee, deletrea y repite correct." } },
+      { key: "act3", title: "Activity 3 (Sentence)", max: 3, pointsDesc: { 0: "No responde.", 1: "Incompleta.", 2: "1-2 errores leves.", 3: "Oración clara (mín. 5 palabras)." } }
     ],
     "2": [
-      { key: "actA1", title: "Part A (Scramble 1)", max: 3, desc: "First scrambled word is completely correct." },
-      { key: "actA2", title: "Part A (Scramble 2)", max: 3, desc: "Second scrambled word is completely correct." },
-      { key: "actB", title: "Part B (Sentence)", max: 5, desc: "Sentence Dictation: Everything correct (letters, caps, spaces, period)." },
-      { key: "actC", title: "Part C (Dictation)", max: 5, desc: "Letter-by-letter dictation is completely correct." }
+      { key: "actA1", title: "Activity A (Scramble 1)", max: 3, pointsDesc: { 0: "Incorrecta.", 1: "Varios errores.", 2: "1 error leve.", 3: "Palabra completamente correcta." } },
+      { key: "actA2", title: "Activity A (Scramble 2)", max: 3, pointsDesc: { 0: "Incorrecta.", 1: "Varios errores.", 2: "1 error leve.", 3: "Palabra completamente correcta." } },
+      { key: "actB", title: "Activity B (Sentence Dictation)", max: 5, pointsDesc: { 0: "Incorrecta.", 1: "Incompleta.", 2: "Varios errores.", 3: "2-3 errores.", 4: "1 error leve.", 5: "Todo correcto (letras, caps, punto)." } },
+      { key: "actC", title: "Activity C (Dictation)", max: 5, pointsDesc: { 0: "Incorrecta.", 1: "Incompleta.", 2: "Varios errores.", 3: "2-3 errores.", 4: "1 error leve.", 5: "Letra a letra completamente correcta." } }
     ],
     "3": [
-      { key: "speed", title: "Speed Reading", max: 3, desc: "3=Excellent, 2=Good, 1=Basic, 0=Low. Continuous rhythm and clear pronunciation." }
+      { key: "speed", title: "Activity - Speed Reading", max: 3, pointsDesc: { 0: "Bajo: Muy pocas o se detiene.", 1: "Básico: Pocas, pausas, errores.", 2: "Bueno: Cantidad media, pequeños errores.", 3: "Excelente: Lee muchas, ritmo continuo." } }
     ]
   },
   "POWER UP 3": {
     "1": [
-      { key: "fase1", title: "Phase 1 (Reading)", max: 3, desc: "Reads the 3 words correctly with good pronunciation and fluency." },
-      { key: "fase2", title: "Phase 2 (Cycle 1)", max: 3, desc: "Listens, repeats, spells, and creates a clear sentence (min. 6 words)." },
-      { key: "fase3", title: "Phase 3 (Cycle 2)", max: 3, desc: "Listens, repeats, spells, and creates a clear sentence (min. 6 words)." }
+      { key: "fase1", title: "Fase 1 (Reading)", max: 3, pointsDesc: { 0: "No responde.", 1: "2 errores o duda.", 2: "1 error leve o poco clara.", 3: "Lee correctamente las 3 palabras." } },
+      { key: "fase2", title: "Fase 2 (Cycle 1)", max: 3, pointsDesc: { 0: "No completa.", 1: "Varios errores o oración débil.", 2: "1 error leve en spelling/oración.", 3: "Repite, deletrea y oración (mín. 6)." } },
+      { key: "fase3", title: "Fase 3 (Cycle 2)", max: 3, pointsDesc: { 0: "No completa.", 1: "Varios errores.", 2: "1 error leve.", 3: "Repite, deletrea y oración (mín. 6)." } }
     ],
     "2": [
-      { key: "parteA", title: "Part A (Scramble)", max: 3, desc: "Team writes the 3 words with perfectly correct spelling and letter order." },
-      { key: "parteB", title: "Part B (Sentence)", max: 5, desc: "Sentence Dictation: Perfect capitalization, spacing, and final punctuation." },
-      { key: "parteC", title: "Part C (Letter-by-Letter)", max: 5, desc: "Letter Dictation: Word must be spelled perfectly, respecting capitalization." }
+      { key: "parteA", title: "Parte A (Scramble)", max: 3, pointsDesc: { 0: "Incorrecto / en blanco.", 1: "Varios errores.", 2: "1 error leve.", 3: "Todas las palabras correctas." } },
+      { key: "parteB", title: "Parte B (Sentence)", max: 5, pointsDesc: { 0: "Incorrecta.", 1: "Incompleta.", 2: "Varios errores.", 3: "2-3 errores.", 4: "1 error leve.", 5: "Perfecto (caps, espacios, puntuación)." } },
+      { key: "parteC", title: "Parte C (Letter-by-Letter)", max: 5, pointsDesc: { 0: "Incorrecta.", 1: "Incompleta.", 2: "Varios errores.", 3: "2-3 errores.", 4: "1 error leve.", 5: "Todo correcto (ortografía y orden)." } }
     ],
     "3": [
-      { key: "fase1", title: "Phase 1 (Speed Reading 10s)", max: 3, desc: "Reads words with a good rhythm, steady pace, and proper pronunciation." },
-      { key: "fase2", title: "Phase 2 (Recall + Sentence 18s)", max: 3, desc: "Correctly spells the LAST word read and forms a valid sentence (min. 6 words)." }
+      { key: "fase1", title: "Fase 1 (Speed Reading 10s)", max: 3, pointsDesc: { 0: "No completa / Incorrecto.", 1: "Pocas palabras.", 2: "Ritmo medio.", 3: "Lee varias palabras, buen ritmo." } },
+      { key: "fase2", title: "Fase 2 (Read + Spell + Sentence 18s)", max: 3, pointsDesc: { 0: "No completa.", 1: "Varios errores.", 2: "2 errores leves en deletreo/oración.", 3: "Deletrea y oración correctas." } }
     ]
   },
   "AMERICAN THINK STARTER": {
     "1": [
-      { key: "word1", title: "Activity 1: Word 1 (Listen & Spell)", max: 2, desc: "2 pts: Says, spells, and repeats correctly. 1 pt: Minor error." },
-      { key: "word2", title: "Activity 2: Word 2 (Spell & Sentence)", max: 4, desc: "4 pts: Spells correctly and creates a clear sentence (min. 6 words). 3 pts: Minor error." }
+      { key: "word1", title: "Activity 1: Word 1 (Listen & Spell)", max: 2, pointsDesc: { 0: "Several errors or does not complete.", 1: "One minor error in pronunc./spelling.", 2: "Says, spells, repeats correctly." } },
+      { key: "word2", title: "Activity 2: Word 2 (Spell & Sentence)", max: 4, pointsDesc: { 0: "Does not complete the task.", 1: "Limited attempt.", 2: "Several errors or weak sentence.", 3: "One minor error.", 4: "Spells correctly, clear sentence (min. 6)." } }
     ],
     "2": [
-      { key: "scramble", title: "Activity A (Scrambled Words)", max: 3, desc: "3 pts: Both words are completely correct. 2 pts: One minor mistake." },
-      { key: "dictation", title: "Activity B (Sentence Dictation)", max: 5, desc: "5 pts: Completely correct (spelling and word order). 4 pts: 1 minor mistake." },
-      { key: "letter", title: "Activity C (Letter-by-Letter)", max: 5, desc: "5 pts: Completely correct (capital letters, spaces, punctuation). 4 pts: 1 minor mistake." }
+      { key: "scramble", title: "Activity A (Scrambled Words)", max: 3, pointsDesc: { 0: "Incorrect or blank.", 1: "Several errors.", 2: "1 minor error in one word.", 3: "Both words correct." } },
+      { key: "dictation", title: "Activity B (Sentence Dictation)", max: 5, pointsDesc: { 0: "Incorrect.", 1: "Incomplete.", 2: "Several errors.", 3: "2-3 errors.", 4: "1 minor error.", 5: "Completely correct (spelling/order)." } },
+      { key: "letter", title: "Activity C (Letter-by-Letter)", max: 5, pointsDesc: { 0: "Incorrect.", 1: "Incomplete.", 2: "Several errors.", 3: "2-3 errors.", 4: "1 minor error.", 5: "Completely correct (caps, spaces, punct)." } }
     ],
     "3": [
-      { key: "speed", title: "Speed Reading + Recall + Sentence", max: 3, desc: "3 pts: Reads quickly, correctly recalls/spells the last word, and creates a clear sentence." }
+      { key: "speed", title: "Speed Reading + Recall + Sentence", max: 3, pointsDesc: { 0: "Cannot recall, spell, or produce.", 1: "Slow reading, several errors.", 2: "Good speed, 1-2 minor errors.", 3: "Reads quickly, perfect recall/sentence." } }
+    ]
+  },
+  "GRAND FINAL": {
+    "4": [
+      { key: "act1", title: "Activity 1 (Rapid Continuous Spell)", max: 3, pointsDesc: { 0: "Does not complete.", 1: "Several errors/unclear pronunciation.", 2: "1-2 minor errors or slight hesitation.", 3: "Reads, spells, and repeats clearly." } },
+      { key: "act2", title: "Activity 2 (Memory Sentence Spell)", max: 3, pointsDesc: { 0: "Does not complete.", 1: "Several errors or missing parts.", 2: "1-2 minor errors.", 3: "Correctly spells full sentence (caps, spaces)." } }
     ]
   }
 };
@@ -100,19 +123,41 @@ const CATEGORIES = [
   { id: "KIDS BOX", name: "Kid's Box", icon: <Brain size={16} />, color: "bg-emerald-500", text: "text-emerald-500", hover: "hover:bg-emerald-50" },
   { id: "POWER UP 1", name: "Power Up 1", icon: <Type size={16} />, color: "bg-violet-500", text: "text-violet-500", hover: "hover:bg-violet-50" },
   { id: "POWER UP 3", name: "Power Up 3", icon: <Zap size={16} />, color: "bg-rose-500", text: "text-rose-500", hover: "hover:bg-rose-50" },
-  { id: "AMERICAN THINK STARTER", name: "American Think", icon: <Trophy size={16} />, color: "bg-orange-500", text: "text-orange-500", hover: "hover:bg-orange-50" }
+  { id: "AMERICAN THINK STARTER", name: "American Think", icon: <Trophy size={16} />, color: "bg-orange-500", text: "text-orange-500", hover: "hover:bg-orange-50" },
+  { id: "GRAND FINAL", name: "Grand Final (Top 5)", icon: <Award size={16} />, color: "bg-amber-500", text: "text-amber-500", hover: "hover:bg-amber-50" }
 ];
 
+const calculateCategoryTotal = (scoresObj, categoryStr) => {
+    if (!scoresObj) return 0;
+    let total = 0;
+    Object.values(scoresObj).forEach(judgeData => {
+        // La Grand Final se calcula sumando ÚNICAMENTE la Ronda 4. El resto suman R1, R2 y R3.
+        const roundsToSum = categoryStr === 'GRAND FINAL' ? [4] : [1, 2, 3];
+        roundsToSum.forEach(roundNum => {
+            const roundScores = judgeData[`round_${roundNum}`] || {};
+            total += Object.values(roundScores).reduce((a, b) => a + b, 0);
+        });
+    });
+    return total;
+};
+
 const JudgesView = () => {
+  const [judgeUsername, setJudgeUsername] = useState(sessionStorage.getItem('username') || '');
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(!judgeUsername || judgeUsername === 'unknown_judge');
+  const [tempName, setTempName] = useState("");
+
   const [selectedCategory, setSelectedCategory] = useState("POWER UP 3");
   const [selectedRound, setSelectedRound] = useState("1");
   const [participants, setParticipants] = useState([]);
   const [selectedParticipant, setSelectedParticipant] = useState(null);
+  
+  // Memoria local de los botones clickeados, aislada de la DB
   const [localScores, setLocalScores] = useState({});
+  const localScoresContext = useRef(""); 
+
   const [saveStatus, setSaveStatus] = useState("idle");
   const [searchTerm, setSearchTerm] = useState("");
   
-  // ESTADOS PARA EL JUEGO EN VIVO Y ALERTA EMERGENTE
   const [liveGameState, setLiveGameState] = useState(null);
   const [gameAlert, setGameAlert] = useState(null);
   const [pendingSelection, setPendingSelection] = useState(null); 
@@ -122,18 +167,49 @@ const JudgesView = () => {
 
   const fetchLiveScores = useCallback(async (category) => {
     try {
+      let apiCategory = category === "GRAND FINAL" ? "AMERICAN THINK STARTER" : category;
+      
       const [partsRes, scoresRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/participants/${category}`),
-        fetch(`${API_BASE_URL}/api/scores/${category}`)
+        fetch(`${API_BASE_URL}/participants/${apiCategory}`),
+        fetch(`${API_BASE_URL}/api/scores/${apiCategory}`)
       ]);
       const partsData = await partsRes.json();
       const scoresData = await scoresRes.json();
 
-      const merged = partsData.map(p => {
+      let merged = partsData.map(p => {
         const pScore = scoresData.find(s => s.participant_id === p._id);
         return { ...p, scoresObj: pScore?.scores || {} };
       });
       
+      if (category === "GRAND FINAL") {
+          const calcBaseScore = (scoresObj) => {
+              if (!scoresObj) return 0;
+              let total = 0;
+              Object.values(scoresObj).forEach(judgeData => {
+                  [1, 2, 3].forEach(roundNum => {
+                      const rScores = judgeData[`round_${roundNum}`] || {};
+                      total += Object.values(rScores).reduce((a, b) => a + b, 0);
+                  });
+              });
+              return total;
+          };
+
+          // Extrae el Top 5 basado en sus rondas 1,2,3
+          merged = merged
+            .filter(p => calcBaseScore(p.scoresObj) > 0)
+            .sort((a, b) => calcBaseScore(b.scoresObj) - calcBaseScore(a.scoresObj))
+            .slice(0, 5);
+      } else if (category === "ALL") {
+          const allPartsRes = await fetch(`${API_BASE_URL}/participants/ALL`);
+          const allScoresRes = await fetch(`${API_BASE_URL}/api/scores/ALL`);
+          const allP = await allPartsRes.json();
+          const allS = await allScoresRes.json();
+          merged = allP.map(p => {
+              const s = allS.find(x => x.participant_id === p._id);
+              return { ...p, scoresObj: s?.scores || {} };
+          });
+      }
+
       setParticipants(merged);
 
       setSelectedParticipant(prev => {
@@ -148,8 +224,9 @@ const JudgesView = () => {
   }, []);
 
   useEffect(() => {
-    if (selectedCategory && selectedCategory !== "ALL") fetchLiveScores(selectedCategory);
-    else if (selectedCategory === "ALL") fetchLiveScores("ALL");
+    if (!isLoginModalOpen) {
+      fetchLiveScores(selectedCategory);
+    }
 
     const handleRemoteUpdate = (payload) => {
       if (payload?.action === 'score_updated') {
@@ -170,30 +247,26 @@ const JudgesView = () => {
       socket.off('score_updated');
       socket.off('clear_state');
     };
-  }, [selectedCategory, fetchLiveScores]);
+  }, [selectedCategory, fetchLiveScores, isLoginModalOpen]);
 
-  // LÓGICA INTELIGENTE DE ALERTA: Solo aparece si NO estás en la categoría y ronda actuales
   useEffect(() => {
     if (liveGameState && liveGameState.contextKey !== lastAlertedContext.current && liveGameState.phase !== 'READY') {
         lastAlertedContext.current = liveGameState.contextKey;
+        
+        // Si es Grand Final (Ronda 4) desde el sistema llega como round 1 del juego final, ajustamos:
+        const effectiveLiveRound = (liveGameState.normalizedCategory === "GRAND FINAL" && liveGameState.round.toString() === "1") ? "4" : liveGameState.round.toString();
 
-        // Verificamos si el juez ya está en la categoría y ronda correctas
-        const isAlreadyViewing = 
-            selectedCategory === liveGameState.normalizedCategory &&
-            selectedRound === liveGameState.round.toString();
-
-        // Si NO está en el juego, le mostramos el popup
+        const isAlreadyViewing = selectedCategory === liveGameState.normalizedCategory && selectedRound === effectiveLiveRound;
         if (!isAlreadyViewing) {
             setGameAlert({
                 category: liveGameState.normalizedCategory,
-                round: liveGameState.round,
+                round: effectiveLiveRound,
                 participantNumber: liveGameState.participantNumber || 'GROUP ACTIVITY'
             });
         }
     }
   }, [liveGameState, selectedCategory, selectedRound]);
 
-  // AUTO-SELECCIONAR AL ACEPTAR ALERTA
   useEffect(() => {
       if (pendingSelection && participants.length > 0) {
           if (pendingSelection === 'GROUP ACTIVITY') {
@@ -208,14 +281,20 @@ const JudgesView = () => {
       }
   }, [participants, pendingSelection]);
 
+  // FIX: Solo cargar de DB cuando se cambia de estudiante o ronda.
   useEffect(() => {
-    if (selectedParticipant) {
-      const mySavedScores = selectedParticipant.scoresObj?.[judgeUsername]?.[`round_${selectedRound}`] || {};
-      setLocalScores(mySavedScores);
+    if (selectedParticipant && judgeUsername) {
+      const newContext = `${selectedParticipant._id}-${selectedRound}`;
+      if (localScoresContext.current !== newContext) {
+         const mySavedScores = selectedParticipant.scoresObj?.[judgeUsername]?.[`round_${selectedRound}`] || {};
+         setLocalScores(mySavedScores);
+         localScoresContext.current = newContext;
+      }
     } else {
       setLocalScores({});
+      localScoresContext.current = "";
     }
-  }, [selectedParticipant, selectedRound, participants]);
+  }, [selectedParticipant?._id, selectedRound, judgeUsername]);
 
   const handleScoreSelect = (criteriaKey, score) => {
     setLocalScores(prev => ({ ...prev, [criteriaKey]: score }));
@@ -223,17 +302,20 @@ const JudgesView = () => {
   };
 
   const handleSaveScores = async () => {
-    if (!selectedParticipant || Object.keys(localScores).length === 0) return;
+    if (!selectedParticipant || Object.keys(localScores).length === 0 || !judgeUsername) return;
     setSaveStatus("saving");
 
     try {
+      // Grand Final se guarda en American Think Starter, ronda 4.
+      const dbCategoryName = selectedCategory === 'GRAND FINAL' ? 'AMERICAN THINK STARTER' : selectedCategory;
+      
       const updatePromises = Object.entries(localScores).map(([criteriaKey, score]) => {
         return fetch(`${API_BASE_URL}/api/scores/${selectedParticipant._id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             participant_name: selectedParticipant.name,
-            category: selectedCategory,
+            category: dbCategoryName,
             round_number: `round_${selectedRound}`,
             criteria_key: criteriaKey,
             score: score,
@@ -262,34 +344,31 @@ const JudgesView = () => {
     return total;
   };
 
-  const calculateGrandTotalAllJudges = (scoresObj) => {
-    return [1, 2, 3].reduce((acc, r) => acc + calculateParticipantRoundTotalGlobal(scoresObj, r), 0);
-  };
-
   const filteredParticipants = participants.filter(p => 
     p.order_number.toString().includes(searchTerm) || 
     p.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const leaderboard = [...participants].filter(p => calculateGrandTotalAllJudges(p.scoresObj) > 0).sort((a, b) => calculateGrandTotalAllJudges(b.scoresObj) - calculateGrandTotalAllJudges(a.scoresObj)).slice(0, 10);
+  const leaderboard = [...participants]
+    .filter(p => calculateCategoryTotal(p.scoresObj, selectedCategory) > 0)
+    .sort((a, b) => calculateCategoryTotal(b.scoresObj, selectedCategory) - calculateCategoryTotal(a.scoresObj, selectedCategory))
+    .slice(0, 10);
+
   const activeRubrics = RUBRICS[selectedCategory]?.[selectedRound] || [];
   const activeRoundInfo = ROUND_INFO[selectedCategory]?.[selectedRound];
   const allCriteriaScored = activeRubrics.length > 0 && activeRubrics.every(r => localScores[r.key] !== undefined);
 
-  // =====================================================================
-  // LÓGICA DE GRUPOS MATEMÁTICA
-  // =====================================================================
   const normalizedLiveGameCategory = liveGameState?.normalizedCategory;
   const isCorrectLiveCategory = normalizedLiveGameCategory === selectedCategory;
   
-  const currentCategoryParticipants = participants.filter(p => p.category === selectedCategory).sort((a, b) => a.order_number - b.order_number);
+  const currentCategoryParticipants = participants.filter(p => p.category === (selectedCategory === "GRAND FINAL" ? "AMERICAN THINK STARTER" : selectedCategory)).sort((a, b) => a.order_number - b.order_number);
   const dynamicNumGroups = liveGameState?.numberOfGroups || 4; 
   const chunkSize = Math.ceil(currentCategoryParticipants.length / dynamicNumGroups);
 
   const getAmericanThinkGroup = (participantId) => {
     const index = currentCategoryParticipants.findIndex(p => p._id === participantId);
     if (index === -1) return -1;
-    return Math.floor(index / chunkSize); // Retorna 0 para Grupo 1, 1 para Grupo 2, etc.
+    return Math.floor(index / chunkSize); 
   };
 
   const handleAcceptAlert = () => {
@@ -300,32 +379,70 @@ const JudgesView = () => {
     setGameAlert(null);
   };
 
-  // Función de renderizado para los botones de participantes individuales
+  const handleLoginSubmit = (e) => {
+    e.preventDefault();
+    if (tempName.trim().length > 0) {
+      sessionStorage.setItem('username', tempName.trim());
+      setJudgeUsername(tempName.trim());
+      setIsLoginModalOpen(false);
+    }
+  };
+
+  if (isLoginModalOpen) {
+    return (
+      <div className="h-screen w-screen bg-slate-950 flex flex-col items-center justify-center p-6 relative overflow-hidden">
+        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
+        <div className="bg-slate-900 border-2 border-indigo-500/30 p-10 rounded-[3rem] shadow-[0_0_50px_rgba(99,102,241,0.2)] max-w-md w-full relative z-10 text-center animate-in zoom-in duration-500">
+          <div className="w-24 h-24 bg-indigo-500/20 text-indigo-400 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner">
+            <Users size={48} />
+          </div>
+          <h2 className="text-3xl font-black text-white uppercase tracking-widest mb-2">Judge Access</h2>
+          <p className="text-slate-400 font-bold mb-8 text-sm">Please identify yourself to record individual scores.</p>
+          <form onSubmit={handleLoginSubmit} className="space-y-4">
+            <input 
+              type="text" 
+              placeholder="e.g. Judge 1, Judge 2..." 
+              value={tempName}
+              onChange={(e) => setTempName(e.target.value)}
+              className="w-full bg-slate-950 border-2 border-slate-700 rounded-2xl px-6 py-4 text-white font-black uppercase tracking-widest text-center focus:border-indigo-500 outline-none transition-all"
+              autoFocus
+              required
+            />
+            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl px-6 py-4 font-black uppercase tracking-widest flex items-center justify-center gap-3 shadow-lg transition-all transform active:scale-95">
+              <LogIn size={20} /> Enter Panel
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   const renderParticipantButton = (p) => {
     const isSelected = selectedParticipant?._id === p._id;
-    const hasMyScores = p.scoresObj && p.scoresObj[judgeUsername]?.[`round_${selectedRound}`] && Object.keys(p.scoresObj[judgeUsername]?.[`round_${selectedRound}`]).length > 0;
+    const gradedByMe = p.scoresObj && p.scoresObj[judgeUsername]?.[`round_${selectedRound}`] && Object.keys(p.scoresObj[judgeUsername]?.[`round_${selectedRound}`]).length > 0;
     
-    const isAmericanThinkRound2 = selectedCategory === "AMERICAN THINK STARTER" && selectedRound === "2";
-    const groupIdx = isAmericanThinkRound2 ? getAmericanThinkGroup(p._id) : null;
+    const isAmThinkR2 = selectedCategory === "AMERICAN THINK STARTER" && selectedRound === "2";
+    const groupIdx = isAmThinkR2 ? getAmericanThinkGroup(p._id) : null;
     
-    // Iluminar si está en el stage (ya sea él individualmente o su grupo entero)
-    const isLiveOnStage = isCorrectLiveCategory && liveGameState?.round?.toString() === selectedRound && (
-        (!isAmericanThinkRound2 && liveGameState?.participantNumber === p.order_number) ||
-        (isAmericanThinkRound2 && liveGameState?.currentGroupIdx === groupIdx) 
+    const effectiveLiveRound = (normalizedLiveGameCategory === "GRAND FINAL" && liveGameState?.round?.toString() === "1") ? "4" : liveGameState?.round?.toString();
+
+    const onStage = isCorrectLiveCategory && effectiveLiveRound === selectedRound && (
+        (!isAmThinkR2 && liveGameState?.participantNumber === p.order_number) ||
+        (isAmThinkR2 && liveGameState?.currentGroupIdx === groupIdx) 
     );
     
     return (
-      <button key={p._id} onClick={() => setSelectedParticipant(p)} className={`w-full text-left p-3 rounded-xl flex items-center justify-between transition-all border-2 mb-1 ${isSelected ? `${activeCategoryObj?.color} text-white shadow-md border-transparent` : isLiveOnStage ? 'bg-rose-50 border-rose-300 shadow-sm' : 'hover:bg-slate-50 bg-white border-transparent'}`}>
+      <button key={p._id} onClick={() => setSelectedParticipant(p)} className={`w-full text-left p-3 rounded-xl flex items-center justify-between transition-all border-2 mb-1 ${isSelected ? `${activeCategoryObj?.color} text-white shadow-md border-transparent` : onStage ? 'bg-rose-50 border-rose-300 shadow-sm' : 'hover:bg-slate-50 bg-white border-transparent'}`}>
         <div className="flex items-center gap-3">
-          <div className={`w-7 h-7 rounded-full flex items-center justify-center font-black text-[10px] ${isSelected ? 'bg-white/20 text-white' : isLiveOnStage ? 'bg-rose-500 text-white shadow-sm animate-pulse' : 'bg-slate-100 text-slate-500'}`}>
+          <div className={`w-7 h-7 rounded-full flex items-center justify-center font-black text-[10px] ${isSelected ? 'bg-white/20 text-white' : onStage ? 'bg-rose-500 text-white animate-pulse' : 'bg-slate-100 text-slate-500'}`}>
             {p.order_number}
           </div>
           <div>
             <span className={`font-black text-[11px] block leading-none uppercase tracking-wide ${isSelected ? 'text-white' : 'text-slate-700'}`}>{p.name}</span>
-            {isLiveOnStage && !isSelected ? (
+            {onStage && !isSelected ? (
               <span className="text-[8px] font-black text-rose-500 uppercase tracking-widest mt-1 flex items-center gap-1 animate-pulse"><Mic size={8}/> ON STAGE</span>
             ) : (
-              hasMyScores && !isSelected && <span className="text-[8px] font-bold text-emerald-500 uppercase tracking-widest mt-1 block">✓ Graded</span>
+              gradedByMe && !isSelected && <span className="text-[8px] font-bold text-emerald-500 uppercase tracking-widest mt-1 block">✓ Graded by You</span>
             )}
           </div>
         </div>
@@ -378,7 +495,7 @@ const JudgesView = () => {
             <div className="flex items-baseline gap-2">
               <h1 className="text-[13px] font-black tracking-widest text-white uppercase italic leading-none">Scoring Panel</h1>
               <span className="text-slate-600 text-xs">/</span>
-              <p className="text-[10px] text-slate-400 font-bold tracking-widest uppercase">Judge: {judgeUsername}</p>
+              <p className="text-[10px] text-slate-400 font-bold tracking-widest uppercase">Judge: <span className="text-white">{judgeUsername}</span></p>
             </div>
           </div>
           <div className="flex items-center gap-2 bg-[#1a1d24] px-2 py-1 rounded border border-slate-700">
@@ -416,7 +533,7 @@ const JudgesView = () => {
             {CATEGORIES.map((cat) => (
               <button
                 key={cat.id}
-                onClick={() => { setSelectedCategory(cat.id); setSelectedParticipant(null); setSelectedRound("1"); setSearchTerm(""); }}
+                onClick={() => { setSelectedCategory(cat.id); setSelectedParticipant(null); setSelectedRound(cat.id === "GRAND FINAL" ? "4" : "1"); setSearchTerm(""); }}
                 className={`flex items-center gap-2 px-4 py-1.5 rounded-lg font-black text-[11px] transition-all whitespace-nowrap border-2 uppercase tracking-wide
                   ${selectedCategory === cat.id ? `${cat.color} text-white border-transparent shadow-sm transform scale-105` : `bg-white text-slate-500 border-slate-200 ${cat.hover}`}`}
               >
@@ -435,9 +552,17 @@ const JudgesView = () => {
               </h2>
               
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                 {/* MUESTRA TODAS LAS CATEGORÍAS EN LA VISTA GLOBAL */}
                  {CATEGORIES.filter(c => c.id !== "ALL").map(cat => {
-                     const catParticipants = participants.filter(p => p.category === cat.name.toUpperCase()).sort((a,b) => calculateGrandTotalAllJudges(b.scoresObj) - calculateGrandTotalAllJudges(a.scoresObj));
+                     const catParticipants = participants.filter(p => {
+                         if (cat.id === "GRAND FINAL") {
+                             return p.scoresObj && calculateCategoryTotal(p.scoresObj, "GRAND FINAL") > 0 && p.category === "AMERICAN THINK STARTER";
+                         }
+                         return p.category === cat.name.toUpperCase() || p.category === cat.id;
+                     }).sort((a,b) => calculateCategoryTotal(b.scoresObj, cat.id) - calculateCategoryTotal(a.scoresObj, cat.id));
+                     
                      if(catParticipants.length === 0) return null;
+                     
                      return (
                          <div key={cat.id} className="bg-slate-50 rounded-2xl border border-slate-200 p-4">
                             <h3 className={`font-black uppercase tracking-widest text-sm mb-4 ${cat.text} flex items-center gap-2`}>{cat.icon} {cat.name}</h3>
@@ -449,7 +574,7 @@ const JudgesView = () => {
                                          <span className="font-bold text-[11px] truncate">{p.name}</span>
                                       </div>
                                       <span className="font-black text-[11px] bg-slate-100 px-2 py-1 rounded text-slate-800">
-                                         {calculateGrandTotalAllJudges(p.scoresObj)} pts
+                                         {calculateCategoryTotal(p.scoresObj, cat.id)} pts
                                       </span>
                                    </div>
                                ))}
@@ -467,11 +592,17 @@ const JudgesView = () => {
             <div className="bg-white p-4 rounded-[1.5rem] shadow-sm border border-slate-200">
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Select Round</h3>
               <div className="flex bg-slate-100 p-1 rounded-xl">
-                {['1', '2', '3'].map(r => (
-                  <button key={r} onClick={() => setSelectedRound(r)} className={`flex-1 py-2 rounded-lg font-black text-[11px] uppercase tracking-wider transition-all ${selectedRound === r ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
-                    Round {r}
-                  </button>
-                ))}
+                {selectedCategory === 'GRAND FINAL' ? (
+                   <button onClick={() => setSelectedRound('4')} className={`flex-1 py-2 rounded-lg font-black text-[11px] uppercase tracking-wider transition-all bg-white text-slate-900 shadow-sm`}>
+                     Round 4 (Final)
+                   </button>
+                ) : (
+                  ['1', '2', '3'].map(r => (
+                    <button key={r} onClick={() => setSelectedRound(r)} className={`flex-1 py-2 rounded-lg font-black text-[11px] uppercase tracking-wider transition-all ${selectedRound === r ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
+                      Round {r}
+                    </button>
+                  ))
+                )}
               </div>
             </div>
 
@@ -528,15 +659,13 @@ const JudgesView = () => {
               <div className="space-y-4 relative">
                 <div className={`${activeCategoryObj?.color} text-white p-5 rounded-[2rem] shadow-xl flex items-center justify-between`}>
                   <div>
-                    <span className="bg-white/20 px-3 py-1 rounded-full text-[9px] font-black tracking-widest uppercase">Round {selectedRound}</span>
+                    <span className="bg-white/20 px-3 py-1 rounded-full text-[9px] font-black uppercase">Round {selectedCategory === 'GRAND FINAL' ? '4 (Final)' : selectedRound}</span>
                     <h2 className="text-2xl font-black tracking-tight mt-2 uppercase">{selectedParticipant.name}</h2>
                   </div>
-                  <div className="w-14 h-14 bg-white/10 backdrop-blur-md rounded-full flex items-center justify-center border-4 border-white/20 shadow-inner">
-                    <span className="text-xl font-black text-white">{selectedParticipant.order_number}</span>
-                  </div>
+                  <div className="w-14 h-14 bg-white/10 backdrop-blur-md rounded-full flex items-center justify-center border-4 border-white/20 font-black text-xl">#{selectedParticipant.order_number}</div>
                 </div>
 
-                <div className="bg-white p-5 md:p-6 rounded-[2rem] shadow-sm border border-slate-200 space-y-6">
+                <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 space-y-8">
                   {activeRoundInfo && (
                     <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl mb-2">
                       <h3 className="text-amber-800 font-black uppercase tracking-widest text-[11px] mb-1 flex items-center gap-2"><Info size={14} />{activeRoundInfo.title}</h3>
@@ -546,20 +675,29 @@ const JudgesView = () => {
 
                   {activeRubrics.length > 0 ? (
                     activeRubrics.map((rubric) => {
-                      const selectedScore = localScores[rubric.key];
-                      const scoreOptions = Array.from({length: rubric.max + 1}, (_, i) => rubric.max - i);
+                      const selScore = localScores[rubric.key];
+                      // Opciones ordenadas de 0 al Máximo.
+                      const options = Array.from({length: rubric.max + 1}, (_, i) => i);
+                      const gridColsClass = rubric.max === 5 ? 'grid-cols-6' : rubric.max === 4 ? 'grid-cols-5' : rubric.max === 3 ? 'grid-cols-4' : 'grid-cols-3';
 
                       return (
-                        <div key={rubric.key} className="space-y-2">
+                        <div key={rubric.key} className="space-y-4">
                           <div>
-                            <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide">{rubric.title}</h3>
-                            <p className="text-[11px] text-slate-500 font-bold bg-slate-50 p-2 rounded-lg mt-1 border border-slate-100 uppercase tracking-wider">{rubric.desc}</p>
+                            <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide flex items-center gap-2">
+                               <Zap size={16} className={activeCategoryObj.text} /> {rubric.title}
+                            </h3>
                           </div>
-                          <div className="grid grid-cols-4 md:grid-cols-6 gap-2 pt-1">
-                            {scoreOptions.map(score => (
-                              <button key={score} onClick={() => handleScoreSelect(rubric.key, score)} className={`py-2.5 rounded-xl font-black text-lg transition-all border-2 ${selectedScore === score ? (score > 0 ? 'bg-emerald-500 border-emerald-600 text-white transform scale-105 shadow-md' : 'bg-rose-500 border-rose-600 text-white transform scale-105 shadow-md') : 'bg-slate-50 border-slate-200 text-slate-400 hover:bg-slate-100'}`}>
-                                {score}
-                              </button>
+                          <div className={`grid ${gridColsClass} gap-2 pt-1`}>
+                            {options.map(score => (
+                              <div key={score} className="flex flex-col items-center">
+                                {/* TEXTO EXPLICATIVO ARRIBA DEL BOTÓN */}
+                                <span className={`text-[9px] font-bold text-center leading-tight mb-2 h-10 flex items-end justify-center px-1 ${selScore === score ? 'text-indigo-600' : 'text-slate-400'}`}>
+                                   {rubric.pointsDesc[score] || ""}
+                                </span>
+                                <button onClick={() => handleScoreSelect(rubric.key, score)} className={`w-full py-3 rounded-xl font-black text-lg transition-all border-2 ${selScore === score ? 'bg-indigo-600 border-indigo-700 text-white scale-105 shadow-md' : 'bg-slate-50 border-slate-200 text-slate-400 hover:border-indigo-300'}`}>
+                                  {score}
+                                </button>
+                              </div>
                             ))}
                           </div>
                         </div>
@@ -572,16 +710,15 @@ const JudgesView = () => {
 
                 <div className="bg-slate-900 rounded-[1.5rem] p-3 shadow-lg flex items-center justify-between border border-slate-700 mt-6">
                   <div className="text-slate-300 px-3">
-                    {allCriteriaScored ? <p className="text-[10px] uppercase tracking-widest font-black"><span className="text-emerald-400">✓ Ready</span> to save</p> : <p className="text-[10px] uppercase tracking-widest font-black"><span className="text-amber-400 animate-pulse">! Pending</span> scores</p>}
+                    {allCriteriaScored ? <p className="text-[10px] uppercase tracking-widest font-black"><span className="text-emerald-400">✓ Ready to Save</span></p> : <p className="text-[10px] uppercase tracking-widest font-black"><span className="text-amber-400 animate-pulse">! Incomplete</span></p>}
                   </div>
-                  <button onClick={handleSaveScores} disabled={saveStatus === 'saving'} className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-black text-[11px] uppercase tracking-widest transition-all ${saveStatus === 'saving' ? 'bg-slate-700 text-slate-400' : saveStatus === 'saved' ? 'bg-emerald-500 text-white' : saveStatus === 'error' ? 'bg-rose-500 text-white' : 'bg-amber-400 text-amber-950 hover:bg-amber-300'}`}>
-                    {saveStatus === 'idle' && <><Save size={14} /> Save</>}
+                  <button onClick={handleSaveScores} disabled={saveStatus === 'saving'} className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-black text-[11px] uppercase tracking-widest transition-all ${saveStatus === 'saving' ? 'bg-slate-700 text-slate-400' : saveStatus === 'saved' ? 'bg-emerald-500 text-white' : 'bg-amber-400 text-amber-950 hover:bg-amber-300'}`}>
+                    {saveStatus === 'idle' && <><Save size={14} /> Save My Score</>}
                     {saveStatus === 'saving' && 'Saving...'}
                     {saveStatus === 'saved' && <><CheckCircle2 size={14} /> Saved!</>}
                     {saveStatus === 'error' && 'Retry'}
                   </button>
                 </div>
-
               </div>
             )}
           </div>
@@ -589,20 +726,27 @@ const JudgesView = () => {
           <div className="lg:w-1/4 mt-6 lg:mt-0 space-y-4">
             <div className="bg-slate-900 text-white p-4 rounded-[1.5rem] shadow-xl border-2 border-slate-800 relative overflow-hidden">
               <div className="absolute -right-2 -top-2 opacity-10"><BarChart3 size={80}/></div>
-              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Global Score Summary</h3>
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 text-center">Global Total (All Judges)</h3>
               
               {selectedParticipant ? (
                 <div className="space-y-2 relative z-10">
-                  <p className="font-black text-sm text-amber-400 truncate uppercase tracking-widest">{selectedParticipant.name}</p>
-                  {[1, 2, 3].map(r => (
-                    <div key={r} className="flex justify-between items-center bg-slate-800 p-2.5 rounded-xl border border-slate-700">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">Round {r}</span>
-                      <span className="font-black text-sm">{calculateParticipantRoundTotalGlobal(selectedParticipant.scoresObj, r)} <span className="text-[9px] text-slate-500">pts</span></span>
-                    </div>
-                  ))}
+                  <p className="font-black text-sm text-amber-400 truncate uppercase tracking-widest text-center">{selectedParticipant.name}</p>
+                  {selectedCategory === 'GRAND FINAL' ? (
+                     <div className="flex justify-between items-center bg-slate-800 p-2.5 rounded-xl border border-slate-700">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">Round 4</span>
+                        <span className="font-black text-sm">{calculateParticipantRoundTotalGlobal(selectedParticipant.scoresObj, 4)} pts</span>
+                     </div>
+                  ) : (
+                     [1, 2, 3].map(r => (
+                       <div key={r} className="flex justify-between items-center bg-slate-800 p-2.5 rounded-xl border border-slate-700">
+                         <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">Round {r}</span>
+                         <span className="font-black text-sm">{calculateParticipantRoundTotalGlobal(selectedParticipant.scoresObj, r)} pts</span>
+                       </div>
+                     ))
+                  )}
                   <div className="pt-2 border-t border-slate-700 flex justify-between items-center mt-2">
                     <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">Total (All Judges)</span>
-                    <span className="text-2xl font-black text-emerald-400">{calculateGrandTotalAllJudges(selectedParticipant.scoresObj)}</span>
+                    <span className="text-2xl font-black text-emerald-400">{calculateCategoryTotal(selectedParticipant.scoresObj, selectedCategory)}</span>
                   </div>
                 </div>
               ) : (
@@ -624,7 +768,7 @@ const JudgesView = () => {
                         <span className={`font-black text-[11px] ${idx === 0 ? 'text-amber-500' : idx === 1 ? 'text-slate-400' : idx === 2 ? 'text-orange-400' : 'text-slate-300'}`}>#{idx + 1}</span>
                         <span className="text-[10px] font-black uppercase tracking-widest text-slate-700 truncate">{p.name}</span>
                       </div>
-                      <span className="font-black text-[11px] text-slate-900 bg-white px-2 py-0.5 rounded shadow-sm border border-slate-100">{calculateGrandTotalAllJudges(p.scoresObj)}</span>
+                      <span className="font-black text-[11px] text-slate-900 bg-white px-2 py-0.5 rounded shadow-sm border border-slate-100">{calculateCategoryTotal(p.scoresObj, selectedCategory)}</span>
                     </div>
                   ))
                 )}

@@ -3,12 +3,24 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { 
   Users, Play, Settings, Info, Award, Loader2, X, 
-  ChevronRight, BookOpen, Trophy, LogOut, MapPin, Trash2, BarChart2
+  ChevronRight, BookOpen, Trophy, LogOut, MapPin, Trash2, BarChart2, Zap
 } from 'lucide-react';
 import { io } from 'socket.io-client';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://concursoengllish.onrender.com';
 const socket = io(API_BASE_URL);
+
+const calcTotalGlobal = (scoresObj) => {
+    if (!scoresObj) return 0;
+    let total = 0;
+    Object.values(scoresObj).forEach(judgeData => {
+        [1, 2, 3].forEach(roundNum => {
+            const roundScores = judgeData[`round_${roundNum}`] || {};
+            total += Object.values(roundScores).reduce((a, b) => a + b, 0);
+        });
+    });
+    return total;
+};
 
 const AdminView = () => {
   const navigate = useNavigate();
@@ -22,16 +34,19 @@ const AdminView = () => {
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
   const [liveParticipants, setLiveParticipants] = useState([]);
 
-  // Elegir CUÁNTOS GRUPOS (turnos) habrá en la Ronda 2 (Máximo 4)
+  const [isRouletteOpen, setIsRouletteOpen] = useState(false);
+  const [rouletteCategory, setRouletteCategory] = useState("KIDS BOX");
+  const [rouletteParticipants, setRouletteParticipants] = useState([]);
+  const [spinning, setSpinning] = useState(false);
+
   const [numberOfGroups, setNumberOfGroups] = useState(4); 
 
   const categoryDetails = {
-    "LITTLE STEPS": { desc: "Nivel inicial (4-5 años). Enfoque en reconocimiento visual.", icon: <Users />, route: '/juego/little-steps' },
+    "KIDS BOX": { desc: "Nivel Primaria. Colores, objetos y gramática.", icon: <Info />, route: '/juego/kids-box' },
     "POWER UP 1": { desc: "Nivel inicial. Enfoque en vocabulario básico y deletreo.", icon: <BookOpen />, route: '/juego/power-up-1' },
-    "POWER UP 3": { desc: "Nivel intermedio. Estructuras gramaticales y fluidez.", icon: <Award />, route: '/juego/power-up-3' },
+    "POWER UP 3": { desc: "Nivel intermedio. Estructuras gramaticales y fluidez.", icon: <Zap />, route: '/juego/power-up-3' },
     "AMERICAN THINK STARTER": { desc: "Nivel A1. Pensamiento crítico y vocabulario.", icon: <Settings />, route: '/juego/american-think' },
-    "KIDS BOX": { desc: "Nivel Primaria. Colores, objetos y gramática inicial.", icon: <Info />, route: '/juego/kids-box' },
-    "GRAND FINAL": { desc: "Competencia de élite. Incluye a los clasificados.", icon: <Trophy />, route: '/juego/grand-final' }
+    "GRAND FINAL": { desc: "Competencia de élite. Top 5 clasificados.", icon: <Trophy />, route: '/juego/grand-final' }
   };
 
   const categories = Object.keys(categoryDetails);
@@ -61,9 +76,9 @@ const AdminView = () => {
   }, [branch]);
 
   useEffect(() => {
-    if (isLeaderboardOpen) fetchGlobalScores();
+    if (isLeaderboardOpen || isRouletteOpen) fetchGlobalScores();
 
-    const handleUpdate = () => { if(isLeaderboardOpen) fetchGlobalScores(); };
+    const handleUpdate = () => { if(isLeaderboardOpen || isRouletteOpen) fetchGlobalScores(); };
     socket.on('score_updated', handleUpdate);
     socket.on('sync_state', (payload) => { if(payload?.action === 'score_updated') handleUpdate(); });
 
@@ -71,31 +86,46 @@ const AdminView = () => {
       socket.off('score_updated', handleUpdate);
       socket.off('sync_state', handleUpdate);
     };
-  }, [isLeaderboardOpen, fetchGlobalScores]);
+  }, [isLeaderboardOpen, isRouletteOpen, fetchGlobalScores]);
 
   const openConfig = async (categoryName) => {
     setLoading(true);
     setActiveCategory(categoryName);
     setIsModalOpen(true);
-    setNumberOfGroups(4); // Reseteamos a 4 grupos por defecto
+    setNumberOfGroups(4);
     
     try {
       if (categoryName === "GRAND FINAL") {
-        const finalCategories = ["AMERICAN THINK STARTER"];
-        const requests = finalCategories.map(cat => 
-          axios.get(`${API_BASE_URL}/participants/${encodeURIComponent(cat)}?branch=${branch}`)
-        );
-        const responses = await Promise.all(requests);
-        const allParticipants = responses.flatMap(res => res.data);
-        const sortedData = allParticipants.sort((a, b) => a.name.localeCompare(b.name));
-        setParticipants(sortedData);
+        const [partsRes, amScoresRes, gfScoresRes] = await Promise.all([
+            fetch(`${API_BASE_URL}/participants/AMERICAN%20THINK%20STARTER?branch=${branch}`),
+            fetch(`${API_BASE_URL}/api/scores/AMERICAN%20THINK%20STARTER?branch=${branch}`),
+            fetch(`${API_BASE_URL}/api/scores/GRAND_FINAL?branch=${branch}`)
+        ]);
+        const partsData = await partsRes.json();
+        const amScoresData = await amScoresRes.json();
+        const gfScoresData = await gfScoresRes.json();
+        
+        let merged = partsData.map(p => {
+            const pScore = amScoresData.find(s => s.participant_id === p._id);
+            return { ...p, amScores: pScore?.scores || {} };
+        });
+
+        const top5 = merged.filter(p => calcTotalGlobal(p.amScores) > 0)
+                           .sort((a,b) => calcTotalGlobal(b.amScores) - calcTotalGlobal(a.amScores))
+                           .slice(0, 5);
+
+        const finalTop5 = top5.map(p => {
+            const gfScore = gfScoresData.find(s => s.participant_id === p._id);
+            return { ...p, scoresObj: gfScore?.scores || {} };
+        });
+
+        setParticipants(finalTop5);
       } else {
         const response = await axios.get(`${API_BASE_URL}/participants/${encodeURIComponent(categoryName)}?branch=${branch}`);
         const sortedData = response.data.sort((a, b) => a.order_number - b.order_number);
         setParticipants(sortedData);
       }
     } catch (error) {
-      console.error("Error cargando participantes:", error);
       setParticipants([]);
     } finally {
       setLoading(false);
@@ -147,17 +177,70 @@ const AdminView = () => {
     navigate('/login');
   };
 
-  const calculateGrandTotal = (scoresObj) => {
-    if (!scoresObj) return 0;
-    let total = 0;
-    Object.values(scoresObj).forEach(judgeData => {
-      [1, 2, 3].forEach(roundNum => {
-        const roundScores = judgeData[`round_${roundNum}`] || {};
-        total += Object.values(roundScores).reduce((a, b) => a + b, 0);
+  // --- LÓGICA DE LA RULETA CORREGIDA ---
+  useEffect(() => {
+    const loadRouletteParts = async () => {
+        try {
+            if (rouletteCategory === "GRAND FINAL") {
+                const [partsRes, scoresRes] = await Promise.all([
+                    fetch(`${API_BASE_URL}/participants/AMERICAN%20THINK%20STARTER?branch=${branch}`),
+                    fetch(`${API_BASE_URL}/api/scores/AMERICAN%20THINK%20STARTER?branch=${branch}`)
+                ]);
+                const partsData = await partsRes.json();
+                const scoresData = await scoresRes.json();
+                let merged = partsData.map(p => ({ ...p, scoresObj: scoresData.find(s => s.participant_id === p._id)?.scores || {} }));
+                const top5 = merged.filter(p => calcTotalGlobal(p.scoresObj) > 0).sort((a,b) => calcTotalGlobal(b.scoresObj) - calcTotalGlobal(a.scoresObj)).slice(0, 5);
+                setRouletteParticipants(top5);
+            } else {
+                const response = await axios.get(`${API_BASE_URL}/participants/${encodeURIComponent(rouletteCategory)}?branch=${branch}`);
+                setRouletteParticipants(response.data);
+            }
+        } catch(e) { setRouletteParticipants([]); }
+    };
+    if (isRouletteOpen) loadRouletteParts();
+  }, [rouletteCategory, branch, isRouletteOpen]);
+
+  // Al abrir la ruleta, mandamos los datos a la Public View para que los cargue.
+  useEffect(() => {
+      if (isRouletteOpen && rouletteParticipants.length > 0 && !spinning) {
+          socket.emit('sync_state', {
+              game: 'ROULETTE_MODE',
+              rouletteCategory,
+              participants: rouletteParticipants.map(p => p.name),
+              spinning: false,
+              winnerName: ""
+          });
+      } else if (!isRouletteOpen) {
+          socket.emit('clear_state');
+      }
+  }, [isRouletteOpen, rouletteCategory, rouletteParticipants]); // Se quitó 'spinning' para no interferir
+
+
+  const spinRoulette = () => {
+      if (rouletteParticipants.length === 0) return;
+      setSpinning(true);
+      const winner = rouletteParticipants[Math.floor(Math.random() * rouletteParticipants.length)];
+      
+      // Emitimos UNA SOLA VEZ el giro y el ganador, PublicView hace la magia.
+      socket.emit('sync_state', {
+          game: 'ROULETTE_MODE',
+          rouletteCategory,
+          participants: rouletteParticipants.map(p => p.name),
+          spinning: true,
+          winnerName: winner.name
       });
-    });
-    return total;
+
+      // Liberamos el botón tras 6 segundos
+      setTimeout(() => {
+          setSpinning(false);
+      }, 6000);
   };
+
+  const closeRoulette = () => {
+      if(spinning) return;
+      setIsRouletteOpen(false);
+      socket.emit('clear_state');
+  }
 
   return (
     <div className="min-h-screen w-full bg-[#F0F7FF] font-sans text-slate-800 overflow-x-hidden flex flex-col">
@@ -172,22 +255,7 @@ const AdminView = () => {
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-nowrap">Dashboard</p>
             </div>
           </div>
-          
           <div className="flex items-center gap-4 md:gap-6">
-            <div className="flex items-center bg-slate-100 p-1 rounded-full border border-slate-200 shadow-inner">
-              <button 
-                onClick={() => setBranch('COCA')}
-                className={`flex items-center gap-1 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest transition-all ${branch === 'COCA' ? 'bg-sky-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
-              >
-                <MapPin size={12} /> Coca
-              </button>
-              <button 
-                onClick={() => setBranch('SACHA')}
-                className={`flex items-center gap-1 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest transition-all ${branch === 'SACHA' ? 'bg-sky-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
-              >
-                <MapPin size={12} /> Sacha
-              </button>
-            </div>
             <button onClick={handleLogout} className="flex items-center gap-2 text-slate-400 hover:text-red-500 hover:bg-red-50 px-3 py-2 rounded-xl transition-all text-xs font-black uppercase tracking-widest">
               <LogOut size={16} /> <span className="hidden md:block">Salir</span>
             </button>
@@ -195,13 +263,16 @@ const AdminView = () => {
         </div>
       </header>
 
-      <main className={`flex-1 transition-all duration-500 ${isModalOpen || isLeaderboardOpen ? 'blur-md scale-[0.98]' : ''} w-full`}>
+      <main className={`flex-1 transition-all duration-500 ${isModalOpen || isLeaderboardOpen || isRouletteOpen ? 'blur-md scale-[0.98]' : ''} w-full`}>
         <div className="px-6 pt-8 pb-4 max-w-[1600px] mx-auto w-full flex flex-col md:flex-row justify-between items-center">
           <div className="text-center md:text-left mb-6 md:mb-0">
             <h2 className="text-4xl font-black text-slate-800 tracking-tighter">Panel de Gestión</h2>
-            <p className="text-slate-500 font-medium mt-1 uppercase text-xs tracking-[0.2em]">Configuración para sede: <span className="text-sky-500 font-bold">{branch}</span></p>
+            <p className="text-slate-500 font-medium mt-1 uppercase text-xs tracking-[0.2em]">Configuración general</p>
           </div>
           <div className="flex items-center gap-4">
+            <button onClick={() => setIsRouletteOpen(true)} className="bg-amber-400 hover:bg-amber-300 text-amber-950 px-6 py-3 rounded-2xl font-black text-sm uppercase tracking-widest shadow-lg shadow-amber-200 transition-all flex items-center gap-2">
+              <Zap size={18} /> Student Roulette
+            </button>
             <button onClick={handleResetAllScores} className="bg-white hover:bg-red-50 text-red-500 border border-red-200 px-5 py-3 rounded-2xl font-black text-sm uppercase tracking-widest shadow-sm transition-all flex items-center gap-2">
               <Trash2 size={18} /> <span className="hidden md:block">Reset All</span>
             </button>
@@ -231,6 +302,53 @@ const AdminView = () => {
         </div>
       </main>
 
+      {/* RULETA MODAL PARA EL ADMIN */}
+      {isRouletteOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" onClick={closeRoulette}></div>
+          <div className="relative bg-[#0f1115] w-full max-w-4xl rounded-[3rem] border-2 border-slate-800 shadow-[0_0_100px_rgba(245,158,11,0.2)] overflow-hidden flex flex-col animate-in zoom-in duration-300">
+             <div className="p-8 border-b border-slate-800 flex justify-between items-center">
+                <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-amber-500 rounded-2xl flex items-center justify-center shadow-lg shadow-amber-500/50"><Zap className="text-amber-950" size={24}/></div>
+                    <div><h3 className="text-2xl font-black text-white uppercase tracking-widest">Student Roulette</h3><p className="text-[10px] font-bold text-amber-500 uppercase tracking-[0.3em]">Random Selection</p></div>
+                </div>
+                <button onClick={closeRoulette} className="text-slate-500 hover:text-white transition-colors"><X size={32}/></button>
+             </div>
+             
+             <div className="p-10 flex flex-col items-center">
+                <select 
+                    value={rouletteCategory} 
+                    onChange={(e) => setRouletteCategory(e.target.value)}
+                    disabled={spinning}
+                    className="bg-slate-900 border-2 border-slate-700 text-white rounded-xl px-6 py-3 font-black uppercase tracking-widest mb-6 outline-none focus:border-amber-500 transition-all text-center w-full max-w-sm"
+                >
+                    {categories.filter(c => c !== "ALL").map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+
+                <div className="w-full bg-slate-900 border border-slate-800 rounded-[2rem] p-6 mb-10 text-center max-h-40 overflow-y-auto">
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Participants on the wheel:</p>
+                    <div className="flex flex-wrap justify-center gap-2">
+                        {rouletteParticipants.length > 0 ? rouletteParticipants.map((p, i) => (
+                            <span key={i} className="bg-slate-800 text-slate-300 text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-700">
+                                {p.name}
+                            </span>
+                        )) : <span className="text-slate-500 text-sm">No students found.</span>}
+                    </div>
+                </div>
+
+                <button 
+                    onClick={spinRoulette} 
+                    disabled={spinning || rouletteParticipants.length === 0}
+                    className={`w-full max-w-sm py-5 rounded-full font-black text-xl uppercase tracking-[0.2em] shadow-xl transition-all transform active:scale-95 ${spinning ? 'bg-slate-800 text-slate-500' : 'bg-amber-500 text-amber-950 hover:bg-amber-400 shadow-amber-500/30 hover:shadow-amber-400/50'}`}
+                >
+                    {spinning ? 'SPINNING ON SCREEN...' : 'SPIN THE WHEEL'}
+                </button>
+             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODALES CONFIGURACIÓN ABAJO */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={closeModal}></div>
@@ -352,7 +470,7 @@ const AdminView = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {categories.filter(c => c !== "ALL").map(cat => {
                     const catParts = liveParticipants.filter(p => p.category === cat.toUpperCase())
-                        .sort((a,b) => calculateGrandTotal(b.scoresObj) - calculateGrandTotal(a.scoresObj));
+                        .sort((a,b) => calcTotalGlobal(b.scoresObj) - calcTotalGlobal(a.scoresObj));
 
                     if(catParts.length === 0) return null;
 
@@ -367,7 +485,7 @@ const AdminView = () => {
                                         <span className="font-bold text-xs text-slate-200 truncate">{p.name}</span>
                                     </div>
                                     <span className="font-black text-sm bg-emerald-500/20 text-emerald-400 px-2.5 py-1 rounded border border-emerald-500/30">
-                                        {calculateGrandTotal(p.scoresObj)}
+                                        {calcTotalGlobal(p.scoresObj)}
                                     </span>
                                   </div>
                               ))}

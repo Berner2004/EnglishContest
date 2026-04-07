@@ -157,16 +157,11 @@ const PowerUp3Game = () => {
       }
     }
     else if (phase === 'BOARDS_UP_SCRAMBLE') {
-      setCurrentIndex(0);
-      setPhase('PAUSE_BEFORE_REVEAL'); // PAUSA ANTES DEL PRIMER REVEAL
+      setPhase('PAUSE_BEFORE_REVEAL'); // PAUSA ANTES DEL REVEAL CONJUNTO
     }
     else if (phase === 'SCRAMBLED_REVEAL') {
-      if (currentIndex < 2) { 
-        setCurrentIndex(prev => prev + 1);
-        setPhase(`PAUSE_BEFORE_REVEAL_${currentIndex + 2}`);
-      } else {
-        setPhase('PAUSE_DICTATION_SENTENCE'); 
-      }
+      // Como ahora mostramos todas las palabras juntas, pasamos directo al dictado
+      setPhase('PAUSE_DICTATION_SENTENCE'); 
     }
     else if (phase === 'DICTATION_SENTENCE') {
       setPhase('BOARDS_UP_SENTENCE');
@@ -225,7 +220,7 @@ const PowerUp3Game = () => {
       setTimeLeft(settings.scrambledView);
       setIsActive(true);
     }
-    else if (phase === 'PAUSE_BEFORE_REVEAL' || phase === 'PAUSE_BEFORE_REVEAL_2' || phase === 'PAUSE_BEFORE_REVEAL_3') {
+    else if (phase === 'PAUSE_BEFORE_REVEAL') {
       setPhase('SCRAMBLED_REVEAL');
     }
     else if (phase === 'PAUSE_DICTATION_SENTENCE') {
@@ -335,7 +330,6 @@ const PowerUp3Game = () => {
     const cleanWord = word.replace(/\s+/g, '');
     let letters = cleanWord.split('');
     
-    // Forzamos mayúscula si es día antes de mezclar
     if (isDay) {
       letters = cleanWord.toLowerCase().split('');
       letters[0] = letters[0].toUpperCase();
@@ -405,14 +399,8 @@ const PowerUp3Game = () => {
       else if (currentIndex === 1) setPhase('PAUSE_BEFORE_SCRAMBLE_2');
       else setPhase('PAUSE_BEFORE_SCRAMBLE_3');
     } 
-    else if (phase === 'SCRAMBLED_REVEAL' || phase.startsWith('PAUSE_BEFORE_REVEAL')) {
-      if (currentIndex === 0) {
-        setPhase('PAUSE_BEFORE_REVEAL'); 
-      } else if (currentIndex === 1) {
-        setPhase('PAUSE_BEFORE_REVEAL_2');
-      } else {
-        setPhase('PAUSE_BEFORE_REVEAL_3');
-      }
+    else if (phase === 'SCRAMBLED_REVEAL' || phase === 'PAUSE_BEFORE_REVEAL') {
+      setPhase('PAUSE_BEFORE_REVEAL');
     } 
     else if (phase === 'DICTATION_SENTENCE' || phase === 'PAUSE_DICTATION_SENTENCE' || phase === 'BOARDS_UP_SENTENCE') {
       setPhase('PAUSE_DICTATION_SENTENCE');
@@ -440,9 +428,7 @@ const PowerUp3Game = () => {
     if (phase === 'PAUSE_BEFORE_SCRAMBLE') return "Up Next: Students memorize scrambled word 1.";
     if (phase === 'PAUSE_BEFORE_SCRAMBLE_2') return "Up Next: Students memorize scrambled word 2.";
     if (phase === 'PAUSE_BEFORE_SCRAMBLE_3') return "Up Next: Students memorize scrambled word 3.";
-    if (phase === 'PAUSE_BEFORE_REVEAL') return "Up Next: Reveal correct word 1.";
-    if (phase === 'PAUSE_BEFORE_REVEAL_2') return "Up Next: Reveal correct word 2.";
-    if (phase === 'PAUSE_BEFORE_REVEAL_3') return "Up Next: Reveal correct word 3.";
+    if (phase === 'PAUSE_BEFORE_REVEAL') return "Up Next: Reveal all correct words.";
     if (phase === 'PAUSE_DICTATION_SENTENCE') return "Up Next: Dictate a full sentence. Students write.";
     if (phase === 'PAUSE_DICTATION_SPELLING') return "Up Next: Dictate a word letter by letter. Students write.";
     if (phase === 'PAUSE_BEFORE_SPEED_1') return "Up Next: Speed Reading Part 1.";
@@ -453,7 +439,7 @@ const PowerUp3Game = () => {
     if (phase === 'SCRAMBLED_VIEW') return "Task: Students memorize the scrambled word.";
     if (phase === 'SCRAMBLED_WRITE') return "Task: Students write the unscrambled word on boards.";
     if (phase.includes('BOARDS_UP')) return "Action: Students turn around and show their boards.";
-    if (phase === 'SCRAMBLED_REVEAL') return "Action: Displaying the correct word on screen.";
+    if (phase === 'SCRAMBLED_REVEAL') return "Action: Displaying the correct words on screen.";
     if (phase === 'DICTATION_SENTENCE') return "Task: Dictate a full sentence. Students write.";
     if (phase === 'DICTATION_SPELLING') return "Task: Dictate a word letter by letter. Students write.";
     if (phase.includes('SPEED_READING')) return "Task: Students read the sequence of words quickly.";
@@ -546,9 +532,7 @@ const PowerUp3Game = () => {
                   {phase === 'PAUSE_BEFORE_SCRAMBLE' && "Look at the Screen! Word 1"}
                   {phase === 'PAUSE_BEFORE_SCRAMBLE_2' && "Look at the Screen! Word 2"}
                   {phase === 'PAUSE_BEFORE_SCRAMBLE_3' && "Look at the Screen! Word 3"}
-                  {phase === 'PAUSE_BEFORE_REVEAL' && "Reveal Word 1"}
-                  {phase === 'PAUSE_BEFORE_REVEAL_2' && "Reveal Word 2"}
-                  {phase === 'PAUSE_BEFORE_REVEAL_3' && "Reveal Word 3"}
+                  {phase === 'PAUSE_BEFORE_REVEAL' && "Reveal Correct Words"}
                   {phase === 'PAUSE_DICTATION_SENTENCE' && "Turn Around for Dictation (Sentence)"}
                   {phase === 'PAUSE_DICTATION_SPELLING' && "Turn Around for Dictation (Spelling)"}
                   {phase === 'PAUSE_BEFORE_SPEED_1' && "Prepare for Speed Reading (Part 1)"}
@@ -611,10 +595,15 @@ const PowerUp3Game = () => {
               </div>
             )}
 
+            {/* REVELAR TODAS LAS PALABRAS AL MISMO TIEMPO */}
             {phase === 'SCRAMBLED_REVEAL' && originalWords?.length > 0 && (
-              <div className="bg-emerald-500 px-12 md:px-32 py-16 md:py-20 rounded-[4rem] border-[16px] border-white shadow-2xl animate-in zoom-in max-w-[90%]">
-                <p className="text-emerald-100 font-black text-2xl md:text-3xl tracking-[0.3em] uppercase mb-6 text-center">CORRECT WORD</p>
-                <h1 className="text-7xl md:text-9xl font-black text-white tracking-widest text-center break-words leading-tight">{originalWords[currentIndex]}</h1>
+              <div className="bg-emerald-500 px-12 md:px-24 py-12 md:py-16 rounded-[4rem] border-[16px] border-white shadow-2xl animate-in zoom-in max-w-[90%] w-full flex flex-col items-center">
+                <p className="text-emerald-100 font-black text-2xl md:text-3xl tracking-[0.3em] uppercase mb-8 text-center">CORRECT WORDS</p>
+                <div className="flex flex-col gap-6 items-center w-full">
+                  {originalWords.map((word, idx) => (
+                    <h1 key={idx} className="text-5xl md:text-7xl font-black text-white tracking-widest text-center break-words leading-tight">{word}</h1>
+                  ))}
+                </div>
               </div>
             )}
 

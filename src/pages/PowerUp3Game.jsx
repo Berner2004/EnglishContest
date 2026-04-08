@@ -5,7 +5,6 @@ import {
 } from 'lucide-react';
 import { io } from 'socket.io-client';
 
-// Conexión al servidor de WebSockets en Render
 const socket = io('https://concursoengllish.onrender.com');
 
 const WORDS_POOL = [
@@ -33,8 +32,7 @@ const PowerUp3Game = () => {
     scrambledWrite: 10,  
     boardsUpTime: 10,     
     dictationTime: 20,    
-    speedTime1: 10,       
-    speedTime2: 5         
+    speedTime: 10 // Ahora solo hay un tiempo de velocidad
   };
 
   const [currentChildIdx, setCurrentChildIdx] = useState(0);
@@ -54,7 +52,6 @@ const PowerUp3Game = () => {
   const audioRefBoardsUp = useRef(new Audio('/audio/boards-up.mp3'));
   const audioRefTimeOut = useRef(new Audio('/sounds/time.mp3'));
 
-  // --- REGLA ORTOGRÁFICA (DÍAS EN MAYÚSCULA) ---
   const formatFinalWord = (word) => {
     if (!word) return "";
     const days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
@@ -65,14 +62,12 @@ const PowerUp3Game = () => {
     return lowerWord;
   };
 
-  // EMISIÓN DE LIMPIEZA
   useEffect(() => {
     return () => {
       socket.emit('clear_state');
     };
   }, []);
 
-  // EMISIÓN DE ESTADO EN VIVO
   useEffect(() => {
     socket.emit('sync_state', {
       game: 'POWER_UP_3',
@@ -85,7 +80,6 @@ const PowerUp3Game = () => {
     });
   }, [round, phase, timeLeft, displayWords, originalWords, currentIndex, currentChild]);
 
-  // MOTOR DEL RELOJ INDEPENDIENTE
   useEffect(() => {
     let interval = null;
     if (isActive && timeLeft > 0) {
@@ -98,7 +92,6 @@ const PowerUp3Game = () => {
     };
   }, [isActive, timeLeft]);
 
-  // EVALUADOR DE FIN DE TIEMPO CON ALARMA AL FINAL (0s)
   useEffect(() => {
     if (isActive && timeLeft === 0) {
       setIsActive(false); 
@@ -106,7 +99,7 @@ const PowerUp3Game = () => {
       const shouldPlayAlarm = [
         'LISTENING_1', 'LISTENING_2', 
         'SCRAMBLED_WRITE', 'DICTATION_SENTENCE', 'DICTATION_SPELLING',
-        'SPEED_READING_1', 'SPEED_READING_2', 'SPELL_LAST_WORD_1', 'SPELL_LAST_WORD_2'
+        'SPEED_READING', 'SPELL_LAST_WORD'
       ].includes(phase);
 
       if (shouldPlayAlarm) {
@@ -116,7 +109,6 @@ const PowerUp3Game = () => {
 
       handleAutoTransition(); 
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive, timeLeft, phase]);
 
   const handleAutoTransition = () => {
@@ -143,13 +135,11 @@ const PowerUp3Game = () => {
       setIsActive(true);
     }
     else if (phase === 'SCRAMBLED_WRITE') {
-      // LÓGICA SCRAMBLE: Palabra 1 -> Palabra 2 -> Palabra 3 -> BOARDS UP
       if (currentIndex < 2) {
         const nextIdx = currentIndex + 1;
         setCurrentIndex(nextIdx);
         setPhase(`PAUSE_BEFORE_SCRAMBLE_${nextIdx + 1}`);
       } else {
-        // Solo la 3ra palabra dispara el Boards Up
         setPhase('BOARDS_UP_SCRAMBLE');
         setTimeLeft(settings.boardsUpTime); 
         audioRefBoardsUp.current.play().catch(e => console.log(e));
@@ -157,10 +147,9 @@ const PowerUp3Game = () => {
       }
     }
     else if (phase === 'BOARDS_UP_SCRAMBLE') {
-      setPhase('PAUSE_BEFORE_REVEAL'); // PAUSA ANTES DEL REVEAL CONJUNTO
+      setPhase('PAUSE_BEFORE_REVEAL'); 
     }
     else if (phase === 'SCRAMBLED_REVEAL') {
-      // Como ahora mostramos todas las palabras juntas, pasamos directo al dictado
       setPhase('PAUSE_DICTATION_SENTENCE'); 
     }
     else if (phase === 'DICTATION_SENTENCE') {
@@ -181,20 +170,12 @@ const PowerUp3Game = () => {
     else if (phase === 'BOARDS_UP_SPELLING') {
       goToNextStudent(); 
     }
-    else if (phase === 'SPEED_READING_1') {
-      setPhase('SPELL_LAST_WORD_1');
+    else if (phase === 'SPEED_READING') {
+      setPhase('SPELL_LAST_WORD');
       setTimeLeft(10);
       setIsActive(true);
     }
-    else if (phase === 'SPELL_LAST_WORD_1') {
-      setPhase('PAUSE_BEFORE_SPEED_2');
-    }
-    else if (phase === 'SPEED_READING_2') {
-      setPhase('SPELL_LAST_WORD_2');
-      setTimeLeft(10);
-      setIsActive(true);
-    }
-    else if (phase === 'SPELL_LAST_WORD_2') {
+    else if (phase === 'SPELL_LAST_WORD') {
       goToNextStudent();
     }
   };
@@ -233,14 +214,9 @@ const PowerUp3Game = () => {
       setTimeLeft(settings.dictationTime + 10);
       setIsActive(true);
     }
-    else if (phase === 'PAUSE_BEFORE_SPEED_1') {
-      setPhase('SPEED_READING_1');
-      setTimeLeft(settings.speedTime1); 
-      setIsActive(true);
-    }
-    else if (phase === 'PAUSE_BEFORE_SPEED_2') {
-      setPhase('SPEED_READING_2');
-      setTimeLeft(settings.speedTime2); 
+    else if (phase === 'PAUSE_BEFORE_SPEED') {
+      setPhase('SPEED_READING');
+      setTimeLeft(settings.speedTime); 
       setIsActive(true);
     }
   };
@@ -376,7 +352,7 @@ const PowerUp3Game = () => {
 
   const startRound3 = () => {
     setUsedWords(new Set());
-    setPhase('PAUSE_BEFORE_SPEED_1');
+    setPhase('PAUSE_BEFORE_SPEED');
     setDisplayWords(getWords(49).map(formatFinalWord)); 
   };
 
@@ -408,12 +384,9 @@ const PowerUp3Game = () => {
     else if (phase === 'DICTATION_SPELLING' || phase === 'PAUSE_DICTATION_SPELLING' || phase === 'BOARDS_UP_SPELLING') {
       setPhase('PAUSE_DICTATION_SPELLING');
     } 
-    else if (phase === 'SPEED_READING_1' || phase === 'SPELL_LAST_WORD_1' || phase === 'PAUSE_BEFORE_SPEED_1') {
-      setPhase('PAUSE_BEFORE_SPEED_1');
+    else if (phase === 'SPEED_READING' || phase === 'SPELL_LAST_WORD' || phase === 'PAUSE_BEFORE_SPEED') {
+      setPhase('PAUSE_BEFORE_SPEED');
     } 
-    else if (phase === 'SPEED_READING_2' || phase === 'SPELL_LAST_WORD_2' || phase === 'PAUSE_BEFORE_SPEED_2') {
-      setPhase('PAUSE_BEFORE_SPEED_2');
-    }
     else {
       setCurrentIndex(0);
       setPhase('READY'); 
@@ -431,8 +404,7 @@ const PowerUp3Game = () => {
     if (phase === 'PAUSE_BEFORE_REVEAL') return "Up Next: Reveal all correct words.";
     if (phase === 'PAUSE_DICTATION_SENTENCE') return "Up Next: Dictate a full sentence. Students write.";
     if (phase === 'PAUSE_DICTATION_SPELLING') return "Up Next: Dictate a word letter by letter. Students write.";
-    if (phase === 'PAUSE_BEFORE_SPEED_1') return "Up Next: Speed Reading Part 1.";
-    if (phase === 'PAUSE_BEFORE_SPEED_2') return "Up Next: Speed Reading Part 2.";
+    if (phase === 'PAUSE_BEFORE_SPEED') return "Up Next: Speed Reading.";
 
     if (phase === 'READING_WORDS') return "Task: Student reads the words on screen.";
     if (phase === 'LISTENING_1' || phase === 'LISTENING_2') return "Task: Student repeats, spells, repeats, and makes a sentence.";
@@ -442,8 +414,9 @@ const PowerUp3Game = () => {
     if (phase === 'SCRAMBLED_REVEAL') return "Action: Displaying the correct words on screen.";
     if (phase === 'DICTATION_SENTENCE') return "Task: Dictate a full sentence. Students write.";
     if (phase === 'DICTATION_SPELLING') return "Task: Dictate a word letter by letter. Students write.";
-    if (phase.includes('SPEED_READING')) return "Task: Students read the sequence of words quickly.";
-    if (phase.startsWith('SPELL_LAST_WORD')) return "Task: Student spells the LAST word they read.";
+    
+    if (phase === 'SPEED_READING') return "Task: Read as fast as possible, remember the LAST word, spell it and make a sentence.";
+    if (phase === 'SPELL_LAST_WORD') return "Task: Student spells the LAST word they read and makes a sentence.";
     
     if (phase === 'CONTEST_CLOSING') return "The contest is completely finished.";
     return "Follow the on-screen instructions.";
@@ -490,7 +463,7 @@ const PowerUp3Game = () => {
       </div>
 
       <main className="flex-1 w-full flex items-center justify-center p-8 bg-slate-100 relative">
-        {(phase === 'SPEED_READING_1' || phase === 'SPEED_READING_2') ? (
+        {phase === 'SPEED_READING' ? (
           <div className="w-full h-full flex flex-col items-center">
             <div className="flex items-center gap-6 bg-slate-900 px-8 py-3 rounded-full border-4 border-amber-400 shadow-xl mb-6 z-10 transition-all">
               <span className="text-white font-black tracking-widest uppercase text-base leading-none">READING SENSE</span>
@@ -535,8 +508,7 @@ const PowerUp3Game = () => {
                   {phase === 'PAUSE_BEFORE_REVEAL' && "Reveal Correct Words"}
                   {phase === 'PAUSE_DICTATION_SENTENCE' && "Turn Around for Dictation (Sentence)"}
                   {phase === 'PAUSE_DICTATION_SPELLING' && "Turn Around for Dictation (Spelling)"}
-                  {phase === 'PAUSE_BEFORE_SPEED_1' && "Prepare for Speed Reading (Part 1)"}
-                  {phase === 'PAUSE_BEFORE_SPEED_2' && "Prepare for Speed Reading (Part 2)"}
+                  {phase === 'PAUSE_BEFORE_SPEED' && "Prepare for Speed Reading"}
                 </p>
 
                 <br/>
@@ -607,7 +579,7 @@ const PowerUp3Game = () => {
               </div>
             )}
 
-            {(phase === 'SPELL_LAST_WORD_1' || phase === 'SPELL_LAST_WORD_2') && (
+            {phase === 'SPELL_LAST_WORD' && (
               <div className="text-center animate-in zoom-in duration-300 p-10 flex flex-col items-center justify-center h-full">
                 <h3 className="text-[8rem] font-black text-red-500 uppercase tracking-tight italic animate-bounce drop-shadow-[0_0_40px_rgba(239,68,68,0.6)]">STOP!</h3>
                 <p className="text-white mt-12 font-black tracking-widest uppercase text-5xl bg-slate-800 py-4 px-10 rounded-full inline-block border border-slate-700 shadow-xl">Spell the LAST word you read!</p>

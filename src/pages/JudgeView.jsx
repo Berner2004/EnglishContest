@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Users, ChevronRight, CheckCircle2, Save, BookOpen, Brain, Zap, Trophy, Type, Info, BarChart3, Camera, Globe, Search, Mic, BellRing, PlayCircle, X, AlertTriangle, Award, LogIn } from 'lucide-react';
+import { Users, ChevronRight, CheckCircle2, Save, BookOpen, Brain, Zap, Trophy, Type, Info, BarChart3, Camera, Globe, Search, Mic, BellRing, PlayCircle, X, AlertTriangle, Award, LogIn, MapPin } from 'lucide-react';
 import { io } from 'socket.io-client';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://concursoengllish.onrender.com';
@@ -131,7 +131,6 @@ const calculateCategoryTotal = (scoresObj, categoryStr) => {
     if (!scoresObj) return 0;
     let total = 0;
     Object.values(scoresObj).forEach(judgeData => {
-        // La Grand Final se calcula sumando ÚNICAMENTE la Ronda 4. El resto suman R1, R2 y R3.
         const roundsToSum = categoryStr === 'GRAND FINAL' ? [4] : [1, 2, 3];
         roundsToSum.forEach(roundNum => {
             const roundScores = judgeData[`round_${roundNum}`] || {};
@@ -139,6 +138,14 @@ const calculateCategoryTotal = (scoresObj, categoryStr) => {
         });
     });
     return total;
+};
+
+const filterByBranchLogic = (parts, currentBranch) => {
+  return parts.filter(p => {
+      if (currentBranch === 'COCA') return p.order_number <= 74;
+      if (currentBranch === 'SACHA') return p.order_number >= 75;
+      return true;
+  });
 };
 
 const JudgesView = () => {
@@ -151,7 +158,14 @@ const JudgesView = () => {
   const [participants, setParticipants] = useState([]);
   const [selectedParticipant, setSelectedParticipant] = useState(null);
   
-  // Memoria local de los botones clickeados, aislada de la DB
+  // NUEVO: Persistencia de sede guardando en LocalStorage
+  const [branch, setBranchState] = useState(localStorage.getItem('selectedBranch') || 'COCA');
+  const setBranch = (newBranch) => {
+      setBranchState(newBranch);
+      localStorage.setItem('selectedBranch', newBranch);
+      setSelectedParticipant(null); // Limpiar selección al cambiar sede
+  };
+
   const [localScores, setLocalScores] = useState({});
   const localScoresContext = useRef(""); 
 
@@ -165,14 +179,15 @@ const JudgesView = () => {
 
   const activeCategoryObj = CATEGORIES.find(c => c.id === selectedCategory);
 
-  const fetchLiveScores = useCallback(async (category) => {
+  const fetchLiveScores = useCallback(async (category, currentBranch) => {
     try {
       let apiCategory = category === "GRAND FINAL" ? "AMERICAN THINK STARTER" : category;
       
       const [partsRes, scoresRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/participants/${apiCategory}`),
-        fetch(`${API_BASE_URL}/api/scores/${apiCategory}`)
+        fetch(`${API_BASE_URL}/participants/${apiCategory}?branch=${currentBranch}`),
+        fetch(`${API_BASE_URL}/api/scores/${apiCategory}?branch=${currentBranch}`)
       ]);
+      
       const partsData = await partsRes.json();
       const scoresData = await scoresRes.json();
 
@@ -181,6 +196,8 @@ const JudgesView = () => {
         return { ...p, scoresObj: pScore?.scores || {} };
       });
       
+      let branchFiltered = filterByBranchLogic(merged, currentBranch);
+
       if (category === "GRAND FINAL") {
           const calcBaseScore = (scoresObj) => {
               if (!scoresObj) return 0;
@@ -194,20 +211,24 @@ const JudgesView = () => {
               return total;
           };
 
-          // Extrae el Top 5 basado en sus rondas 1,2,3
-          merged = merged
+          merged = branchFiltered
             .filter(p => calcBaseScore(p.scoresObj) > 0)
             .sort((a, b) => calcBaseScore(b.scoresObj) - calcBaseScore(a.scoresObj))
             .slice(0, 5);
       } else if (category === "ALL") {
-          const allPartsRes = await fetch(`${API_BASE_URL}/participants/ALL`);
-          const allScoresRes = await fetch(`${API_BASE_URL}/api/scores/ALL`);
+          const [allPartsRes, allScoresRes] = await Promise.all([
+              fetch(`${API_BASE_URL}/participants/ALL?branch=${currentBranch}`),
+              fetch(`${API_BASE_URL}/api/scores/ALL?branch=${currentBranch}`)
+          ]);
           const allP = await allPartsRes.json();
           const allS = await allScoresRes.json();
-          merged = allP.map(p => {
+          let allMerged = allP.map(p => {
               const s = allS.find(x => x.participant_id === p._id);
               return { ...p, scoresObj: s?.scores || {} };
           });
+          merged = filterByBranchLogic(allMerged, currentBranch);
+      } else {
+          merged = branchFiltered;
       }
 
       setParticipants(merged);
@@ -225,13 +246,15 @@ const JudgesView = () => {
 
   useEffect(() => {
     if (!isLoginModalOpen) {
-      fetchLiveScores(selectedCategory);
+      fetchLiveScores(selectedCategory, branch);
     }
 
     const handleRemoteUpdate = (payload) => {
       if (payload?.action === 'score_updated') {
-        fetchLiveScores(selectedCategory);
+        fetchLiveScores(selectedCategory, branch);
       } else if (payload && payload.game) {
+        if(payload.branch && payload.branch !== branch) return;
+
         const normalizedCategory = payload.game.replace(/_/g, ' ');
         const contextKey = `${normalizedCategory}-${payload.round}-${payload.participantNumber || 'GROUP'}-${payload.currentGroupIdx || 0}`;
         setLiveGameState({ ...payload, normalizedCategory, contextKey });
@@ -239,7 +262,7 @@ const JudgesView = () => {
     };
 
     socket.on('sync_state', handleRemoteUpdate);
-    socket.on('score_updated', () => fetchLiveScores(selectedCategory));
+    socket.on('score_updated', () => fetchLiveScores(selectedCategory, branch));
     socket.on('clear_state', () => setLiveGameState(null));
 
     return () => {
@@ -247,14 +270,14 @@ const JudgesView = () => {
       socket.off('score_updated');
       socket.off('clear_state');
     };
-  }, [selectedCategory, fetchLiveScores, isLoginModalOpen]);
+  }, [selectedCategory, branch, fetchLiveScores, isLoginModalOpen]);
 
   useEffect(() => {
     if (liveGameState && liveGameState.contextKey !== lastAlertedContext.current && liveGameState.phase !== 'READY') {
         lastAlertedContext.current = liveGameState.contextKey;
         
-        // Si es Grand Final (Ronda 4) desde el sistema llega como round 1 del juego final, ajustamos:
-        const effectiveLiveRound = (liveGameState.normalizedCategory === "GRAND FINAL" && liveGameState.round.toString() === "1") ? "4" : liveGameState.round.toString();
+        const liveRoundString = String(liveGameState.round ?? '');
+        const effectiveLiveRound = (liveGameState.normalizedCategory === "GRAND FINAL" && liveRoundString === "1") ? "4" : liveRoundString;
 
         const isAlreadyViewing = selectedCategory === liveGameState.normalizedCategory && selectedRound === effectiveLiveRound;
         if (!isAlreadyViewing) {
@@ -281,7 +304,6 @@ const JudgesView = () => {
       }
   }, [participants, pendingSelection]);
 
-  // FIX: Solo cargar de DB cuando se cambia de estudiante o ronda.
   useEffect(() => {
     if (selectedParticipant && judgeUsername) {
       const newContext = `${selectedParticipant._id}-${selectedRound}`;
@@ -306,7 +328,6 @@ const JudgesView = () => {
     setSaveStatus("saving");
 
     try {
-      // Grand Final se guarda en American Think Starter, ronda 4.
       const dbCategoryName = selectedCategory === 'GRAND FINAL' ? 'AMERICAN THINK STARTER' : selectedCategory;
       
       const updatePromises = Object.entries(localScores).map(([criteriaKey, score]) => {
@@ -326,7 +347,7 @@ const JudgesView = () => {
 
       await Promise.all(updatePromises);
       socket.emit('sync_state', { action: 'score_updated' });
-      await fetchLiveScores(selectedCategory);
+      await fetchLiveScores(selectedCategory, branch);
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2500);
     } catch (error) {
@@ -344,9 +365,10 @@ const JudgesView = () => {
     return total;
   };
 
+  // NUEVO: Corrección del error .toString() validando que order_number exista
   const filteredParticipants = participants.filter(p => 
-    p.order_number.toString().includes(searchTerm) || 
-    p.name.toLowerCase().includes(searchTerm.toLowerCase())
+    (p.order_number?.toString() || '').includes(searchTerm) || 
+    (p.name || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const leaderboard = [...participants]
@@ -373,7 +395,7 @@ const JudgesView = () => {
 
   const handleAcceptAlert = () => {
     setSelectedCategory(gameAlert.category);
-    setSelectedRound(gameAlert.round.toString());
+    setSelectedRound(String(gameAlert?.round ?? '4'));
     setSearchTerm('');
     setPendingSelection(gameAlert.participantNumber); 
     setGameAlert(null);
@@ -488,36 +510,54 @@ const JudgesView = () => {
         </div>
       )}
 
+      {/* HEADER PRINCIPAL */}
       <header className="bg-[#0f1115] text-white h-12 flex items-center border-b border-slate-800 sticky top-0 z-50">
         <div className="flex justify-between items-center w-full max-w-[98%] mx-auto px-2">
           <div className="flex items-center gap-3">
             <BookOpen className="text-amber-400" size={16} />
             <div className="flex items-baseline gap-2">
-              <h1 className="text-[13px] font-black tracking-widest text-white uppercase italic leading-none">Scoring Panel</h1>
-              <span className="text-slate-600 text-xs">/</span>
+              <h1 className="text-[13px] font-black tracking-widest text-white uppercase italic leading-none hidden md:block">Scoring Panel</h1>
+              <span className="text-slate-600 text-xs hidden md:block">/</span>
               <p className="text-[10px] text-slate-400 font-bold tracking-widest uppercase">Judge: <span className="text-white">{judgeUsername}</span></p>
             </div>
           </div>
-          <div className="flex items-center gap-2 bg-[#1a1d24] px-2 py-1 rounded border border-slate-700">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
-            <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">Live DB</span>
+          
+          <div className="flex items-center gap-4">
+            {/* NUEVO ESTILO: Selector de sede grande y blanco */}
+            <div className="flex items-center bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-sm">
+                <MapPin size={14} className="text-slate-500 mr-2" />
+                <select 
+                    value={branch} 
+                    onChange={(e) => setBranch(e.target.value)} 
+                    className="bg-transparent text-xs font-black text-slate-800 uppercase tracking-widest outline-none cursor-pointer"
+                >
+                    <option value="COCA">SEDE: COCA</option>
+                    <option value="SACHA">SEDE: SACHA</option>
+                </select>
+            </div>
+
+            <div className="flex items-center gap-2 bg-[#1a1d24] px-2 py-1 rounded border border-slate-700">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
+              <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest hidden sm:block">Live DB</span>
+            </div>
           </div>
         </div>
       </header>
 
-      {liveGameState && liveGameState.game && liveGameState.phase !== 'READY' && (
+      {/* INDICADOR DE JUEGO EN VIVO */}
+      {liveGameState && liveGameState.game && liveGameState.phase !== 'READY' && liveGameState.branch === branch && (
         <div className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between shadow-md border-b border-rose-500 z-40 relative">
           <div className="flex items-center gap-3">
             <div className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.8)]"></div>
             <span className="font-black uppercase tracking-widest text-xs text-rose-400 flex items-center gap-1"><Mic size={14}/> LIVE STAGE</span>
             <div className="h-4 w-px bg-slate-700 mx-2"></div>
-            <span className="font-bold text-[11px] uppercase tracking-widest text-slate-300">
+            <span className="font-bold text-[11px] uppercase tracking-widest text-slate-300 truncate max-w-[150px] md:max-w-none">
               {normalizedLiveGameCategory} • R{liveGameState.round}
             </span>
           </div>
           <div className="flex items-center gap-2 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 shadow-inner">
-            <span className="text-[10px] text-slate-400 uppercase font-black tracking-widest">On Stage:</span>
-            <span className="text-sm font-black text-amber-400 uppercase">
+            <span className="text-[10px] text-slate-400 uppercase font-black tracking-widest hidden sm:block">On Stage:</span>
+            <span className="text-sm font-black text-amber-400 uppercase whitespace-nowrap">
                 {liveGameState.participantNumber === 'GROUP ACTIVITY' 
                     ? `GROUP ${liveGameState.currentGroupIdx + 1}` 
                     : `#${liveGameState.participantNumber}`}
@@ -526,6 +566,7 @@ const JudgesView = () => {
         </div>
       )}
 
+      {/* MENU CATEGORÍAS */}
       <div className="bg-white shadow-sm border-b border-slate-200">
         <div className="max-w-[98%] mx-auto p-3">
           <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Select Category</p>
@@ -548,11 +589,10 @@ const JudgesView = () => {
         <main className="max-w-[98%] mx-auto p-4 mt-2">
            <div className="bg-white rounded-[2rem] p-6 shadow-xl border border-slate-200 min-h-[70vh]">
               <h2 className="text-2xl font-black uppercase tracking-widest mb-6 flex items-center gap-3 text-slate-800">
-                 <Globe className="text-indigo-600" size={32} /> Global General Ranking
+                 <Globe className="text-indigo-600" size={32} /> Global General Ranking ({branch})
               </h2>
               
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                 {/* MUESTRA TODAS LAS CATEGORÍAS EN LA VISTA GLOBAL */}
                  {CATEGORIES.filter(c => c.id !== "ALL").map(cat => {
                      const catParticipants = participants.filter(p => {
                          if (cat.id === "GRAND FINAL") {
@@ -608,9 +648,11 @@ const JudgesView = () => {
 
             <div className="bg-white rounded-[1.5rem] shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[55vh]">
               <div className="bg-slate-50 p-3 border-b border-slate-100 flex flex-col gap-3">
-                <div className="flex items-center gap-2">
-                  <Users size={16} className={activeCategoryObj?.text}/>
-                  <h3 className="font-black text-[11px] text-slate-700 uppercase tracking-widest">Participants</h3>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Users size={16} className={activeCategoryObj?.text}/>
+                    <h3 className="font-black text-[11px] text-slate-700 uppercase tracking-widest">Participants ({branch})</h3>
+                  </div>
                 </div>
                 <div className="relative">
                   <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -653,7 +695,7 @@ const JudgesView = () => {
             {!selectedParticipant ? (
               <div className="bg-white rounded-[2rem] border-2 border-dashed border-slate-200 h-[60vh] flex flex-col items-center justify-center text-slate-400">
                 <div className={`w-20 h-20 rounded-full ${activeCategoryObj?.color} bg-opacity-10 flex items-center justify-center mb-4`}>{activeCategoryObj?.icon}</div>
-                <h2 className="text-xl font-black text-slate-600 uppercase tracking-widest">No Student Selected</h2>
+                <h2 className="text-xl font-black text-slate-600 uppercase tracking-widest text-center">No Student Selected<br/><span className="text-sm text-slate-400">({branch})</span></h2>
               </div>
             ) : (
               <div className="space-y-4 relative">
@@ -676,7 +718,6 @@ const JudgesView = () => {
                   {activeRubrics.length > 0 ? (
                     activeRubrics.map((rubric) => {
                       const selScore = localScores[rubric.key];
-                      // Opciones ordenadas de 0 al Máximo.
                       const options = Array.from({length: rubric.max + 1}, (_, i) => i);
                       const gridColsClass = rubric.max === 5 ? 'grid-cols-6' : rubric.max === 4 ? 'grid-cols-5' : rubric.max === 3 ? 'grid-cols-4' : 'grid-cols-3';
 
@@ -690,7 +731,6 @@ const JudgesView = () => {
                           <div className={`grid ${gridColsClass} gap-2 pt-1`}>
                             {options.map(score => (
                               <div key={score} className="flex flex-col items-center">
-                                {/* TEXTO EXPLICATIVO ARRIBA DEL BOTÓN */}
                                 <span className={`text-[9px] font-bold text-center leading-tight mb-2 h-10 flex items-end justify-center px-1 ${selScore === score ? 'text-indigo-600' : 'text-slate-400'}`}>
                                    {rubric.pointsDesc[score] || ""}
                                 </span>

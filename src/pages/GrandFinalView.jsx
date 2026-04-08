@@ -3,6 +3,10 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { 
   Play, Pause, RotateCcw, SkipForward, Home, Ear, Edit3, Zap, Trophy, Award, EyeOff, ChevronLeft, ChevronRight, Type, ArrowRight
 } from 'lucide-react';
+import { io } from 'socket.io-client';
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://concursoengllish.onrender.com';
+const socket = io(API_BASE_URL);
 
 const ELITE_WORDS_POOL = [
   "swimming", "breakfast", "bathroom", "crocodile", "mountain", "beautiful", "thursday", "firefighter",
@@ -42,36 +46,20 @@ const GrandFinalView = () => {
 
   const currentChild = participants[currentChildIdx];
   const intervalRef = useRef(null);
-  const bcRef = useRef(null);
   const audioRef = useRef(new Audio('/audio/boards-up.mp3'));
 
   useEffect(() => {
-    bcRef.current = new BroadcastChannel('amazon_game_channel');
-    return () => {
-      if(bcRef.current) {
-        bcRef.current.postMessage({ type: 'CLEAR_STATE' });
-        bcRef.current.close();
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (bcRef.current) {
-      bcRef.current.postMessage({
-        type: 'SYNC_STATE',
-        payload: {
-          game: 'GRAND_FINAL',
-          round: 'FINAL', 
-          phase, 
-          timeLeft, 
-          displayWords, 
-          wowSentence, 
-          currentIndex,
-          participantNumber: currentChild?.order_number,
-          triggerAudio: phase.includes('BOARDS_UP') && timeLeft === settings.boardsUpTime
-        }
-      });
-    }
+    // Cambiamos bcRef por socket.emit
+    socket.emit('sync_state', {
+      game: 'GRAND_FINAL',
+      round: 'FINAL', 
+      phase, 
+      timeLeft, 
+      displayWords, 
+      wowSentence, 
+      currentIndex,
+      participantNumber: currentChild?.order_number
+    });
   }, [phase, timeLeft, displayWords, wowSentence, currentIndex, currentChild]);
 
   useEffect(() => {
@@ -191,18 +179,22 @@ const GrandFinalView = () => {
           {/* READY / PAUSAS */}
           {(phase === 'READY' || phase.startsWith('PAUSE')) && (
             <div className="text-center animate-in zoom-in duration-300">
-              <Trophy size={100} className="text-amber-500 mx-auto mb-8 drop-shadow-lg" />
-              <h2 className="text-5xl font-black text-white uppercase tracking-widest italic drop-shadow-lg">
-                {phase === 'READY' ? 'ARE YOU READY?' : 'STANDBY'}
-              </h2>
-              {phase === 'PAUSE_WOW' && (
-                <p className="text-amber-400 font-bold uppercase text-2xl bg-amber-900/40 py-3 px-8 rounded-full border border-amber-500/30 inline-block mt-6 animate-pulse uppercase tracking-widest">
-                  "Prepare for the WOW Moment"
-                </p>
-              )}
-              <br/>
-              <button onClick={startNextPhase} className="mt-8 bg-amber-500 hover:bg-amber-600 px-24 py-10 rounded-[2.5rem] font-black text-white text-3xl shadow-[0_15px_0_0_#92400e] active:shadow-none active:translate-y-[15px] transition-all">
-                {phase === 'READY' ? 'START FINAL' : 'CONTINUE'}
+              <div className="bg-amber-500/10 p-10 rounded-[3rem] border-2 border-amber-500/20 mb-8">
+                 <Trophy size={100} className="text-amber-500 mx-auto mb-6 drop-shadow-lg" />
+                 <h2 className="text-5xl font-black text-white uppercase tracking-widest italic">
+                   {phase === 'READY' ? 'FINALIST READY' : 'CHALLENGE COMPLETED'}
+                 </h2>
+                 <p className="text-amber-400 font-black text-xl mt-4 uppercase tracking-[0.3em]">
+                   {phase === 'READY' ? 'Waiting for rules review...' : 'Prepare for next part'}
+                 </p>
+              </div>
+
+              <button 
+                onClick={startNextPhase} 
+                className="bg-emerald-500 hover:bg-emerald-600 px-24 py-8 rounded-[2.5rem] font-black text-white text-3xl shadow-[0_12px_0_0_#065f46] active:shadow-none active:translate-y-[12px] transition-all flex items-center gap-4 mx-auto"
+              >
+                <Play size={40} fill="currentColor" />
+                {phase === 'READY' ? 'START TURN' : 'CONTINUE TO WOW'}
               </button>
             </div>
           )}

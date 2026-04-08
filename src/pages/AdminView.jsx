@@ -3,7 +3,7 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { 
   Users, Play, Settings, Info, Award, Loader2, X, 
-  ChevronRight, BookOpen, Trophy, LogOut, MapPin, Trash2, BarChart2, Zap, Camera
+  ChevronRight, BookOpen, Trophy, LogOut, MapPin, Trash2, BarChart2, Zap, Camera, Search, Plus
 } from 'lucide-react';
 import { io } from 'socket.io-client';
 
@@ -30,18 +30,28 @@ const AdminView = () => {
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   
-  const [branch, setBranch] = useState('COCA'); 
+  // Persistencia de sede guardando en LocalStorage
+  const [branch, setBranchState] = useState(localStorage.getItem('selectedBranch') || 'COCA'); 
+  
+  const setBranch = (newBranch) => {
+      setBranchState(newBranch);
+      localStorage.setItem('selectedBranch', newBranch);
+  };
+
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
   const [liveParticipants, setLiveParticipants] = useState([]);
 
+  // ESTADOS DE LA RULETA HÍBRIDA
   const [isRouletteOpen, setIsRouletteOpen] = useState(false);
-  const [rouletteCategory, setRouletteCategory] = useState("LITTLE STEPS");
+  const [rouletteCategory, setRouletteCategory] = useState("MANUAL"); // NUEVO: Control de combobox
   const [rouletteParticipants, setRouletteParticipants] = useState([]);
   const [spinning, setSpinning] = useState(false);
+  const [lastWinner, setLastWinner] = useState(null);
+  const [newRouletteNames, setNewRouletteNames] = useState("");
 
   const [numberOfGroups, setNumberOfGroups] = useState(4); 
+  const [searchQuery, setSearchQuery] = useState('');
 
-  // AQUÍ SE AGREGA LITTLE STEPS NUEVAMENTE
   const categoryDetails = {
     "LITTLE STEPS": { desc: "Nivel inicial (4-5 años). Enfoque en reconocimiento.", icon: <Camera />, route: '/juego/little-steps' },
     "KIDS BOX": { desc: "Nivel Primaria. Colores, objetos y gramática.", icon: <Info />, route: '/juego/kids-box' },
@@ -58,6 +68,14 @@ const AdminView = () => {
     return () => { document.body.style.backgroundColor = ''; };
   }, []);
 
+  const filterByBranchLogic = (parts, currentBranch) => {
+    return parts.filter(p => {
+        if (currentBranch === 'COCA') return p.order_number <= 74;
+        if (currentBranch === 'SACHA') return p.order_number >= 75;
+        return true;
+    });
+  };
+
   const fetchGlobalScores = useCallback(async () => {
     try {
       const [partsRes, scoresRes] = await Promise.all([
@@ -67,20 +85,21 @@ const AdminView = () => {
       const partsData = await partsRes.json();
       const scoresData = await scoresRes.json();
 
-      const merged = partsData.map(p => {
+      let merged = partsData.map(p => {
         const pScore = scoresData.find(s => s.participant_id === p._id);
         return { ...p, scoresObj: pScore?.scores || {} };
       });
-      setLiveParticipants(merged);
+      
+      setLiveParticipants(filterByBranchLogic(merged, branch));
     } catch (error) {
       console.error("Error cargando puntajes globales:", error);
     }
   }, [branch]);
 
   useEffect(() => {
-    if (isLeaderboardOpen || isRouletteOpen) fetchGlobalScores();
+    if (isLeaderboardOpen) fetchGlobalScores();
 
-    const handleUpdate = () => { if(isLeaderboardOpen || isRouletteOpen) fetchGlobalScores(); };
+    const handleUpdate = () => { if(isLeaderboardOpen) fetchGlobalScores(); };
     socket.on('score_updated', handleUpdate);
     socket.on('sync_state', (payload) => { if(payload?.action === 'score_updated') handleUpdate(); });
 
@@ -88,14 +107,22 @@ const AdminView = () => {
       socket.off('score_updated', handleUpdate);
       socket.off('sync_state', handleUpdate);
     };
-  }, [isLeaderboardOpen, isRouletteOpen, fetchGlobalScores]);
+  }, [isLeaderboardOpen, fetchGlobalScores]);
 
   const openConfig = async (categoryName) => {
     setLoading(true);
     setActiveCategory(categoryName);
     setIsModalOpen(true);
     setNumberOfGroups(4);
+    setSearchQuery(''); 
     
+    socket.emit('sync_state', {
+      game: 'SHOW_RULES',
+      category: categoryName,
+      branch: branch,
+      phase: 'READY' 
+    });
+
     try {
       if (categoryName === "GRAND FINAL") {
         const [partsRes, amScoresRes, gfScoresRes] = await Promise.all([
@@ -112,7 +139,9 @@ const AdminView = () => {
             return { ...p, amScores: pScore?.scores || {} };
         });
 
-        const top5 = merged.filter(p => calcTotalGlobal(p.amScores) > 0)
+        const branchFiltered = filterByBranchLogic(merged, branch);
+
+        const top5 = branchFiltered.filter(p => calcTotalGlobal(p.amScores) > 0)
                            .sort((a,b) => calcTotalGlobal(b.amScores) - calcTotalGlobal(a.amScores))
                            .slice(0, 5);
 
@@ -124,7 +153,7 @@ const AdminView = () => {
         setParticipants(finalTop5);
       } else {
         const response = await axios.get(`${API_BASE_URL}/participants/${encodeURIComponent(categoryName)}?branch=${branch}`);
-        const sortedData = response.data.sort((a, b) => a.order_number - b.order_number);
+        const sortedData = filterByBranchLogic(response.data, branch).sort((a, b) => a.order_number - b.order_number);
         setParticipants(sortedData);
       }
     } catch (error) {
@@ -137,6 +166,7 @@ const AdminView = () => {
   const closeModal = () => {
     setIsModalOpen(false);
     setTimeout(() => setActiveCategory(null), 300); 
+    socket.emit('clear_state');
   };
 
   const toggleStatus = (id, currentStatus) => {
@@ -179,81 +209,172 @@ const AdminView = () => {
     navigate('/login');
   };
 
-  // --- LÓGICA DE LA RULETA CORREGIDA ---
+  // ================= LÓGICA DE LA RULETA HÍBRIDA =================
+
+  // Cargar participantes si se elige una categoría del combo box
   useEffect(() => {
-    const loadRouletteParts = async () => {
-        try {
-            if (rouletteCategory === "GRAND FINAL") {
-                const [partsRes, scoresRes] = await Promise.all([
-                    fetch(`${API_BASE_URL}/participants/AMERICAN%20THINK%20STARTER?branch=${branch}`),
-                    fetch(`${API_BASE_URL}/api/scores/AMERICAN%20THINK%20STARTER?branch=${branch}`)
-                ]);
-                const partsData = await partsRes.json();
-                const scoresData = await scoresRes.json();
-                let merged = partsData.map(p => ({ ...p, scoresObj: scoresData.find(s => s.participant_id === p._id)?.scores || {} }));
-                const top5 = merged.filter(p => calcTotalGlobal(p.scoresObj) > 0).sort((a,b) => calcTotalGlobal(b.scoresObj) - calcTotalGlobal(a.scoresObj)).slice(0, 5);
-                setRouletteParticipants(top5);
-            } else {
-                const response = await axios.get(`${API_BASE_URL}/participants/${encodeURIComponent(rouletteCategory)}?branch=${branch}`);
-                setRouletteParticipants(response.data);
-            }
-        } catch(e) { setRouletteParticipants([]); }
-    };
-    if (isRouletteOpen) loadRouletteParts();
+      if (!isRouletteOpen || rouletteCategory === "MANUAL") return;
+
+      const loadCategoryToRoulette = async () => {
+          try {
+              setLastWinner(null);
+              let fetchedParts = [];
+
+              if (rouletteCategory === "ALL") {
+                  const response = await axios.get(`${API_BASE_URL}/participants/ALL?branch=${branch}`);
+                  fetchedParts = filterByBranchLogic(response.data, branch);
+              } else if (rouletteCategory === "GRAND FINAL") {
+                  const [partsRes, scoresRes] = await Promise.all([
+                      fetch(`${API_BASE_URL}/participants/AMERICAN%20THINK%20STARTER?branch=${branch}`),
+                      fetch(`${API_BASE_URL}/api/scores/AMERICAN%20THINK%20STARTER?branch=${branch}`)
+                  ]);
+                  const partsData = await partsRes.json();
+                  const scoresData = await scoresRes.json();
+                  let merged = partsData.map(p => ({ ...p, scoresObj: scoresData.find(s => s.participant_id === p._id)?.scores || {} }));
+                  const branchFiltered = filterByBranchLogic(merged, branch);
+                  const top5 = branchFiltered.filter(p => calcTotalGlobal(p.scoresObj) > 0).sort((a,b) => calcTotalGlobal(b.scoresObj) - calcTotalGlobal(a.scoresObj)).slice(0, 5);
+                  fetchedParts = top5;
+              } else {
+                  const response = await axios.get(`${API_BASE_URL}/participants/${encodeURIComponent(rouletteCategory)}?branch=${branch}`);
+                  fetchedParts = filterByBranchLogic(response.data, branch);
+              }
+
+              const formatted = fetchedParts.map(p => ({ id: p._id || Date.now() + Math.random(), name: p.name.toUpperCase() }));
+              setRouletteParticipants(formatted);
+
+              socket.emit('sync_state', {
+                  game: 'ROULETTE_MODE',
+                  phase: 'ROULETTE_ACTIVE',
+                  participants: formatted.map(p => p.name),
+                  spinning: false,
+                  winnerName: ""
+              });
+
+          } catch(e) { 
+              setRouletteParticipants([]); 
+          }
+      };
+
+      loadCategoryToRoulette();
   }, [rouletteCategory, branch, isRouletteOpen]);
 
-  // Al abrir la ruleta, mandamos los datos a la Public View para que los cargue.
-  useEffect(() => {
-      if (isRouletteOpen && rouletteParticipants.length > 0 && !spinning) {
+  // Manejo de múltiples nombres manuales separados por salto de línea
+  const handleAddRouletteNames = (e) => {
+      e.preventDefault();
+      if (!newRouletteNames.trim()) return;
+      
+      const namesArray = newRouletteNames.split('\n')
+          .map(n => n.trim().toUpperCase())
+          .filter(n => n.length > 0);
+          
+      if (namesArray.length === 0) return;
+
+      const newParts = namesArray.map((name, idx) => ({
+          id: Date.now() + idx,
+          name: name
+      }));
+      
+      const updated = [...rouletteParticipants, ...newParts];
+      
+      setRouletteParticipants(updated);
+      setNewRouletteNames("");
+      setRouletteCategory("MANUAL"); // Cambiar combobox a manual para evitar refetch
+
+      if (!spinning) {
           socket.emit('sync_state', {
               game: 'ROULETTE_MODE',
-              rouletteCategory,
-              participants: rouletteParticipants.map(p => p.name),
+              phase: 'ROULETTE_ACTIVE',
+              participants: updated.map(p => p.name),
               spinning: false,
-              winnerName: "" // Mientras no gire, el nombre debe estar vacío
+              winnerName: lastWinner ? lastWinner.name : ""
           });
       }
-  }, [isRouletteOpen, rouletteCategory, rouletteParticipants.length]); 
-  // Nota: quitamos 'spinning' de las dependencias para que no se resetee el nombre al term
+  };
 
+  const handleRemoveRouletteParticipant = (idToRemove) => {
+      const updated = rouletteParticipants.filter(p => p.id !== idToRemove);
+      setRouletteParticipants(updated);
+
+      let currentWinner = lastWinner ? lastWinner.name : "";
+      if (lastWinner && lastWinner.id === idToRemove) {
+          setLastWinner(null);
+          currentWinner = "";
+      }
+
+      if (!spinning) {
+          socket.emit('sync_state', {
+              game: 'ROULETTE_MODE',
+              phase: 'ROULETTE_ACTIVE',
+              participants: updated.map(p => p.name),
+              spinning: false,
+              winnerName: currentWinner
+          });
+      }
+  };
+
+  const handleClearRoulette = () => {
+      if (spinning) return;
+      setRouletteParticipants([]);
+      setLastWinner(null);
+      setRouletteCategory("MANUAL");
+      
+      socket.emit('sync_state', {
+          game: 'ROULETTE_MODE',
+          phase: 'ROULETTE_ACTIVE', 
+          participants: [],
+          spinning: false,
+          winnerName: ""
+      });
+  };
 
   const spinRoulette = () => {
       if (rouletteParticipants.length === 0) return;
       
-      // 1. Elegimos al ganador ALEATORIAMENTE antes de mandar el comando de giro
+      setLastWinner(null);
       const winner = rouletteParticipants[Math.floor(Math.random() * rouletteParticipants.length)];
-      
       setSpinning(true);
 
-      // 2. Emitimos el inicio del giro incluyendo YA el nombre del ganador seleccionado.
-      // Esto permite que la PublicView calcule los grados exactos para que ese nombre quede ARRIBA.
       socket.emit('sync_state', {
           game: 'ROULETTE_MODE',
-          rouletteCategory,
+          phase: 'ROULETTE_ACTIVE', 
           participants: rouletteParticipants.map(p => p.name),
           spinning: true,
-          winnerName: winner.name // El nombre se envía desde el segundo 0
+          winnerName: winner.name 
       });
 
-      // 3. Esperamos exactamente 6 segundos (el tiempo que dura la animación en PublicView)
-      // para enviar la señal de "detenerse" y que aparezca el anuncio gigante.
       setTimeout(() => {
           setSpinning(false);
+          setLastWinner(winner);
           socket.emit('sync_state', {
               game: 'ROULETTE_MODE',
-              rouletteCategory,
+              phase: 'ROULETTE_ACTIVE', 
               participants: rouletteParticipants.map(p => p.name),
-              spinning: false, // Al poner esto en false, se activa el modal en la PublicView
+              spinning: false, 
               winnerName: winner.name
           });
-      }, 6000); // 6 segundos es el tiempo de la transición visual
+      }, 6000); 
+  };
+
+  const handleRemoveWinner = () => {
+      if (!lastWinner) return;
+      const updatedParticipants = rouletteParticipants.filter(p => p.id !== lastWinner.id);
+      setRouletteParticipants(updatedParticipants);
+      setLastWinner(null);
+
+      socket.emit('sync_state', {
+          game: 'ROULETTE_MODE',
+          phase: 'ROULETTE_ACTIVE', 
+          participants: updatedParticipants.map(p => p.name),
+          spinning: false,
+          winnerName: ""
+      });
   };
 
   const closeRoulette = () => {
       if(spinning) return;
       setIsRouletteOpen(false);
-      socket.emit('clear_state');
-  }
+      socket.emit('clear_state'); 
+  };
 
   return (
     <div className="min-h-screen w-full bg-[#F0F7FF] font-sans text-slate-800 overflow-x-hidden flex flex-col">
@@ -269,6 +390,19 @@ const AdminView = () => {
             </div>
           </div>
           <div className="flex items-center gap-4 md:gap-6">
+            
+            <div className="flex items-center bg-slate-100 p-1.5 rounded-xl">
+                <MapPin size={16} className="text-slate-500 ml-2" />
+                <select 
+                    value={branch} 
+                    onChange={(e) => setBranch(e.target.value)} 
+                    className="bg-transparent text-sm font-black text-slate-700 uppercase tracking-widest outline-none cursor-pointer pl-2 pr-4 py-1 border-none"
+                >
+                    <option value="COCA">SEDE: COCA</option>
+                    <option value="SACHA">SEDE: SACHA</option>
+                </select>
+            </div>
+
             <button onClick={handleLogout} className="flex items-center gap-2 text-slate-400 hover:text-red-500 hover:bg-red-50 px-3 py-2 rounded-xl transition-all text-xs font-black uppercase tracking-widest">
               <LogOut size={16} /> <span className="hidden md:block">Salir</span>
             </button>
@@ -284,7 +418,7 @@ const AdminView = () => {
           </div>
           <div className="flex items-center gap-4">
             <button onClick={() => setIsRouletteOpen(true)} className="bg-amber-400 hover:bg-amber-300 text-amber-950 px-6 py-3 rounded-2xl font-black text-sm uppercase tracking-widest shadow-lg shadow-amber-200 transition-all flex items-center gap-2">
-              <Zap size={18} /> Student Roulette
+              <Zap size={18} /> Roulette Custom
             </button>
             <button onClick={handleResetAllScores} className="bg-white hover:bg-red-50 text-red-500 border border-red-200 px-5 py-3 rounded-2xl font-black text-sm uppercase tracking-widest shadow-sm transition-all flex items-center gap-2">
               <Trash2 size={18} /> <span className="hidden md:block">Reset All</span>
@@ -315,7 +449,7 @@ const AdminView = () => {
         </div>
       </main>
 
-      {/* RULETA MODAL PARA EL ADMIN */}
+      {/* ================= RULETA MODAL MANUAL ================= */}
       {isRouletteOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" onClick={closeRoulette}></div>
@@ -323,45 +457,128 @@ const AdminView = () => {
              <div className="p-8 border-b border-slate-800 flex justify-between items-center">
                 <div className="flex items-center gap-4">
                     <div className="w-12 h-12 bg-amber-500 rounded-2xl flex items-center justify-center shadow-lg shadow-amber-500/50"><Zap className="text-amber-950" size={24}/></div>
-                    <div><h3 className="text-2xl font-black text-white uppercase tracking-widest">Student Roulette</h3><p className="text-[10px] font-bold text-amber-500 uppercase tracking-[0.3em]">Random Selection</p></div>
+                    <div>
+                      <h3 className="text-2xl font-black text-white uppercase tracking-widest">Custom Roulette</h3>
+                      <p className="text-[10px] font-bold text-amber-500 uppercase tracking-[0.3em]">Híbrido: Combobox & Manual ({branch})</p>
+                    </div>
                 </div>
                 <button onClick={closeRoulette} className="text-slate-500 hover:text-white transition-colors"><X size={32}/></button>
              </div>
              
-             <div className="p-10 flex flex-col items-center">
-                <select 
-                    value={rouletteCategory} 
-                    onChange={(e) => setRouletteCategory(e.target.value)}
-                    disabled={spinning}
-                    className="bg-slate-900 border-2 border-slate-700 text-white rounded-xl px-6 py-3 font-black uppercase tracking-widest mb-6 outline-none focus:border-amber-500 transition-all text-center w-full max-w-sm"
-                >
-                    {categories.filter(c => c !== "ALL").map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
+             <div className="p-10 flex flex-col lg:flex-row gap-10 items-stretch">
+                
+                <div className="flex flex-col gap-4 w-full lg:w-2/5">
+                   {/* COMBOBOX DE CATEGORÍAS */}
+                   <div className="mb-2">
+                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">1. Cargar Categoría (Opcional)</p>
+                       <select 
+                           value={rouletteCategory} 
+                           onChange={(e) => setRouletteCategory(e.target.value)}
+                           disabled={spinning}
+                           className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-4 py-3 text-xs font-black uppercase tracking-widest outline-none focus:border-amber-500 transition-all cursor-pointer"
+                       >
+                           <option value="MANUAL">✍️ SÓLO INGRESO MANUAL</option>
+                           <option value="ALL">🌟 ALL CATEGORIES</option>
+                           {categories.map(c => (
+                               <option key={c} value={c}>{c}</option>
+                           ))}
+                       </select>
+                   </div>
 
-                <div className="w-full bg-slate-900 border border-slate-800 rounded-[2rem] p-6 mb-10 text-center max-h-40 overflow-y-auto">
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Participants on the wheel:</p>
-                    <div className="flex flex-wrap justify-center gap-2">
-                        {rouletteParticipants.length > 0 ? rouletteParticipants.map((p, i) => (
-                            <span key={i} className="bg-slate-800 text-slate-300 text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-700">
-                                {p.name}
-                            </span>
-                        )) : <span className="text-slate-500 text-sm">No students found.</span>}
-                    </div>
+                   {/* FORMULARIO TEXTAREA */}
+                   <form onSubmit={handleAddRouletteNames} className="flex flex-col gap-3 flex-1">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">2. Ingreso Manual (1 por línea)</p>
+                      <textarea 
+                         value={newRouletteNames} 
+                         onChange={(e) => setNewRouletteNames(e.target.value)} 
+                         placeholder="Ejemplo:&#10;Juan&#10;Alberto&#10;Juana" 
+                         disabled={spinning}
+                         className="flex-1 bg-slate-900 border border-slate-700 text-white rounded-xl px-5 py-4 text-sm font-black uppercase tracking-widest outline-none focus:border-amber-500 transition-all placeholder:text-slate-600 resize-none custom-scrollbar min-h-[120px]"
+                      />
+                      <button 
+                         type="submit" 
+                         disabled={spinning || !newRouletteNames.trim()} 
+                         className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 py-3 rounded-xl font-black text-sm uppercase tracking-widest transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                       >
+                         <Plus size={18} /> Agregar
+                      </button>
+                   </form>
                 </div>
 
-                <button 
-                    onClick={spinRoulette} 
-                    disabled={spinning || rouletteParticipants.length === 0}
-                    className={`w-full max-w-sm py-5 rounded-full font-black text-xl uppercase tracking-[0.2em] shadow-xl transition-all transform active:scale-95 ${spinning ? 'bg-slate-800 text-slate-500' : 'bg-amber-500 text-amber-950 hover:bg-amber-400 shadow-amber-500/30 hover:shadow-amber-400/50'}`}
-                >
-                    {spinning ? 'SPINNING ON SCREEN...' : 'SPIN THE WHEEL'}
-                </button>
+                {/* LISTA Y CONTROLES */}
+                <div className="w-full lg:w-3/5 flex flex-col">
+                    <div className="w-full bg-slate-900 border border-slate-800 rounded-[2rem] p-6 mb-6 flex-1 max-h-64 overflow-y-auto custom-scrollbar">
+                        <div className="flex justify-between items-center mb-4">
+                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                              Participants on the wheel:
+                            </p>
+                            <div className="flex items-center gap-3">
+                                <span className="bg-slate-800 px-2 py-0.5 rounded text-white text-xs font-bold border border-slate-700">
+                                  Total: {rouletteParticipants.length}
+                                </span>
+                                <button 
+                                  onClick={handleClearRoulette} 
+                                  disabled={spinning || rouletteParticipants.length === 0} 
+                                  className="text-rose-500 hover:text-white hover:bg-rose-500 px-2 py-0.5 rounded border border-rose-500/50 transition-all text-[10px] uppercase font-black tracking-widest flex items-center gap-1 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-rose-500"
+                                >
+                                    <Trash2 size={12} /> Limpiar
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div className="flex flex-wrap gap-2">
+                            {rouletteParticipants.length > 0 ? rouletteParticipants.map((p) => {
+                                const isWinner = lastWinner && p.id === lastWinner.id;
+                                return (
+                                  <div 
+                                    key={p.id} 
+                                    className={`flex items-center gap-2 pl-3 pr-1 py-1 rounded-lg border text-xs font-bold transition-all ${isWinner ? 'bg-amber-500 text-amber-950 border-amber-400 scale-110 shadow-lg shadow-amber-500/50' : 'bg-slate-800 text-slate-300 border-slate-700'}`}
+                                  >
+                                      <span>{p.name}</span>
+                                      {!spinning && (
+                                        <button 
+                                          onClick={() => handleRemoveRouletteParticipant(p.id)}
+                                          className="p-1 hover:bg-rose-500 hover:text-white text-slate-500 rounded-md transition-colors"
+                                          title="Eliminar de la ruleta"
+                                        >
+                                          <X size={14} />
+                                        </button>
+                                      )}
+                                  </div>
+                                )
+                            }) : (
+                                <div className="w-full h-24 flex items-center justify-center text-slate-600 text-sm font-bold border-2 border-dashed border-slate-800 rounded-xl">
+                                  Agrega participantes para empezar.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-4 w-full">
+                        <button 
+                            onClick={spinRoulette} 
+                            disabled={spinning || rouletteParticipants.length === 0}
+                            className={`flex-1 py-4 rounded-xl font-black text-lg uppercase tracking-[0.2em] shadow-xl transition-all transform active:scale-95 ${spinning ? 'bg-slate-800 text-slate-500' : 'bg-amber-500 text-amber-950 hover:bg-amber-400 shadow-amber-500/30'}`}
+                        >
+                            {spinning ? 'SPINNING...' : 'SPIN WHEEL'}
+                        </button>
+
+                        {!spinning && lastWinner && (
+                            <button 
+                                onClick={handleRemoveWinner}
+                                className="bg-rose-500 text-white px-6 py-4 rounded-xl font-black text-sm uppercase tracking-widest hover:bg-rose-600 transition-all shadow-lg shadow-rose-500/30 flex items-center justify-center gap-2"
+                            >
+                                <Trash2 size={18} /> Eliminar Ganador
+                            </button>
+                        )}
+                    </div>
+                </div>
              </div>
           </div>
         </div>
       )}
 
-      {/* MODALES DE CONFIGURACIÓN Y LEADERBOARD */}
+      {/* MODAL DE CONFIGURACIÓN DEL JUEGO */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={closeModal}></div>
@@ -417,11 +634,23 @@ const AdminView = () => {
                 </div>
 
                 <div className="lg:col-span-2 bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden flex flex-col">
-                  <div className="p-6 bg-slate-50/50 border-b border-slate-100 flex justify-between items-center">
+                  <div className="p-6 bg-slate-50/50 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Lista de Estudiantes</span>
-                    <div className="flex gap-2">
-                      <button onClick={() => setAllStatus('absent')} className="text-[10px] font-black text-red-500 hover:bg-red-50 px-3 py-1.5 rounded-lg border border-red-100 uppercase tracking-tighter transition-all">Todos Ausentes</button>
-                      <button onClick={() => setAllStatus('waiting')} className="text-[10px] font-black text-green-600 hover:bg-green-50 px-3 py-1.5 rounded-lg border border-green-100 uppercase tracking-tighter transition-all">Todos Presentes</button>
+                    
+                    <div className="flex flex-wrap gap-3 items-center w-full md:w-auto justify-end">
+                      <div className="relative flex items-center mr-2 shadow-sm rounded-xl">
+                        <Search size={18} className="absolute left-3 text-slate-400" />
+                        <input 
+                          type="number"
+                          placeholder="Buscar N°..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="pl-10 pr-4 py-2.5 bg-white rounded-xl border border-slate-200 text-sm font-black outline-none focus:border-sky-500 w-40 transition-all"
+                        />
+                      </div>
+
+                      <button onClick={() => setAllStatus('absent')} className="text-[10px] font-black text-red-500 hover:bg-red-50 px-4 py-2.5 rounded-xl border border-red-100 uppercase tracking-tighter transition-all">Todos Ausentes</button>
+                      <button onClick={() => setAllStatus('waiting')} className="text-[10px] font-black text-green-600 hover:bg-green-50 px-4 py-2.5 rounded-xl border border-green-100 uppercase tracking-tighter transition-all">Todos Presentes</button>
                     </div>
                   </div>
                   
@@ -440,7 +669,9 @@ const AdminView = () => {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
-                          {participants.map((p) => (
+                          {participants
+                            .filter(p => p.order_number?.toString().includes(searchQuery))
+                            .map((p) => (
                             <tr key={p._id} className="group hover:bg-sky-50/30 transition-colors">
                               <td className="px-8 py-5 font-mono font-black text-sky-300 text-lg">#{p.order_number}</td>
                               <td className={`px-8 py-5 font-black text-sm uppercase tracking-tight ${p.status === 'absent' ? 'text-slate-200 line-through' : 'text-slate-700'}`}>
@@ -464,6 +695,7 @@ const AdminView = () => {
         </div>
       )}
 
+      {/* LEADERBOARD GLOBAL */}
       {isLeaderboardOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm" onClick={() => setIsLeaderboardOpen(false)}></div>
